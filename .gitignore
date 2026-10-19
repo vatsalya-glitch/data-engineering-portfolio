@@ -1,0 +1,26 @@
+# Generated database files
+*.duckdb
+duckdb/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.env
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+
+# Project-specific
+*.log
+.ipynb_checkpoints/

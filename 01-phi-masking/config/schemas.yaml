@@ -1,0 +1,118 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# SINGLE SOURCE OF TRUTH: Schema definitions and PHI masking policy
+#
+# This file defines:
+#   1. Raw table schemas (what columns exist and their types)
+#   2. Which columns contain PII (Personally Identifiable Information)
+#   3. How each PII column should be masked
+#
+# The pipeline reads this file to:
+#   - Validate incoming data schema matches what we expect
+#   - Detect PII during the DETECT stage
+#   - Apply correct masking strategies in the MASK stage
+#
+# ──────────────────────────────────────────────────────────────────────────────
+
+# Portal appointments: booked appointments from the patient portal
+portal_appointments:
+  source: "data/portal_appointments.csv"
+  source_type: "csv"
+  description: "Appointments booked through the patient portal. Some patients no-show."
+  columns:
+    appointment_id:
+      type: "string"
+      description: "Unique appointment identifier (APT-NNNN)"
+      pii: false
+    name:
+      type: "string"
+      description: "Patient name as entered in portal"
+      pii: true
+      masking_strategy: "hash_md5"
+    department:
+      type: "string"
+      description: "Medical department (Cardiology, Orthopedics, etc). Sometimes missing."
+      pii: false
+    appointment_datetime:
+      type: "string"
+      description: "Date and time of appointment (YYYY-MM-DD HH:MM)"
+      pii: false
+    appointment_status:
+      type: "string"
+      description: "Status: 'showed_up' or 'no_show'"
+      pii: false
+    registration_source:
+      type: "string"
+      description: "Always 'portal' for this table"
+      pii: false
+
+# Patient records: full patient information from reception
+patient_records:
+  source: "data/patient_records.json"
+  source_type: "json"
+  description: "Complete patient records collected at reception or emergency intake."
+  columns:
+    patient_id:
+      type: "string"
+      description: "Unique patient identifier (PAT-NNN)"
+      pii: false
+    insurance_number:
+      type: "string"
+      description: "Insurance ID number (INS-NNNNNN)"
+      pii: true
+      masking_strategy: "hash_md5"
+    name:
+      type: "string"
+      description: "Full patient name"
+      pii: true
+      masking_strategy: "hash_md5"
+    age_group:
+      type: "string"
+      description: "Age group category (0-18, 19-29, etc)"
+      pii: false
+    gender:
+      type: "string"
+      description: "Gender (Male, Female, Non-binary, Prefer not to say)"
+      pii: false
+    zip_code:
+      type: "string"
+      description: "Postal code (5 digits)"
+      pii: true
+      masking_strategy: "redact"
+    blood_type:
+      type: "string"
+      description: "Blood type (A+, AB-, etc)"
+      pii: false
+    long_term_illnesses:
+      type: "array"
+      description: "List of chronic conditions"
+      pii: false
+    emergency_contact_name:
+      type: "string"
+      description: "Name of emergency contact"
+      pii: true
+      masking_strategy: "hash_md5"
+    emergency_contact_phone:
+      type: "string"
+      description: "Phone number of emergency contact (various formats)"
+      pii: true
+      masking_strategy: "hash_md5"
+    appointment_id:
+      type: "string"
+      description: "Link to portal appointment (APT-NNNN), null for emergency walk-ins"
+      pii: false
+    visit_type:
+      type: "string"
+      description: "Visit type: 'scheduled' or 'emergency'"
+      pii: false
+    appointment_status:
+      type: "string"
+      description: "Status: 'showed_up', 'no_appointment', or other"
+      pii: false
+    registration_source:
+      type: "string"
+      description: "Source: 'portal_then_reception' or 'reception'"
+      pii: false
+    created_at:
+      type: "string"
+      description: "Date record was created (YYYY-MM-DD)"
+      pii: false

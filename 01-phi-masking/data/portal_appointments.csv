@@ -1,0 +1,97 @@
+appointment_id,name,department,appointment_datetime,appointment_status,registration_source
+APT-0001,SARAH smith,Cardiology,2024-11-18 17:15,showed_up,portal
+APT-0002,Kevin SCHULZ,Dermatology,2024-10-09 08:45,showed_up,portal
+APT-0003,NINA Brown,Orthopedics,2024-08-24 09:15,showed_up,portal
+APT-0004,lisa SCHULZ,Dermatology,2024-09-17 12:45,showed_up,portal
+APT-0005,Daniel Schmidt,General Practice,2024-05-04 15:15,showed_up,portal
+APT-0006,Daniel Khan,Neurology,2024-02-05 12:45,showed_up,portal
+APT-0007,anna Khan,Dermatology,2024-01-02 12:30,no_show,portal
+APT-0008,lisa Weber,General Practice,2024-03-17 15:45,showed_up,portal
+APT-0009,lisa Martinez,Psychiatry,2024-08-21 13:15,showed_up,portal
+APT-0010,Maria Taylor,Pediatrics,2024-10-19 14:15,showed_up,portal
+APT-0011,julia Anderson,Psychiatry,2024-01-23 13:45,showed_up,portal
+APT-0012,NINA MEYER,Psychiatry,2024-07-16 10:45,showed_up,portal
+APT-0013,thomas Fischer,Neurology,2024-09-14 17:30,showed_up,portal
+APT-0014,laura Khan,General Practice,2024-02-21 16:45,showed_up,portal
+APT-0015,NINA Wilson,,2024-03-14 14:15,showed_up,portal
+APT-0016,James Wilson,Dermatology,2024-06-22 17:45,showed_up,portal
+APT-0017,Ahmed Weber,Oncology,2024-12-11 16:45,no_show,portal
+APT-0018,EMMA HOFFMANN,General Practice,2024-10-04 08:00,showed_up,portal
+APT-0019,julia Khan,Dermatology,2024-04-26 09:45,showed_up,portal
+APT-0020,laura SCHULZ,Orthopedics,2024-08-15 10:30,showed_up,portal
+APT-0021,OLIVER Schmidt,Cardiology,2024-06-15 08:30,showed_up,portal
+APT-0022,Kevin Becker,Psychiatry,2024-03-15 11:45,showed_up,portal
+APT-0023,Fatima Wilson,Neurology,2024-03-28 10:00,showed_up,portal
+APT-0024,julia SCHULZ,Psychiatry,2024-11-13 11:45,showed_up,portal
+APT-0025,Maria Schmidt,Neurology,2024-04-28 15:30,showed_up,portal
+APT-0026,NINA Martinez,Cardiology,2024-08-26 12:15,showed_up,portal
+APT-0027,john Martinez,Oncology,2024-10-27 12:45,no_show,portal
+APT-0028,julia Fischer,General Practice,2024-06-03 11:45,showed_up,portal
+APT-0029,David Martinez,Orthopedics,2024-05-01 14:30,showed_up,portal
+APT-0030,Maria Robinson,Dermatology,2024-01-12 14:30,showed_up,portal
+APT-0031,julia Garcia,,2024-12-17 08:45,showed_up,portal
+APT-0032,Fatima Anderson,Dermatology,2024-04-27 17:30,showed_up,portal
+APT-0033,Kevin Robinson,Pediatrics,2024-11-13 12:15,showed_up,portal
+APT-0034,Daniel Jones,Cardiology,2024-06-07 15:00,showed_up,portal
+APT-0035,laura Robinson,Neurology,2024-02-16 12:30,no_show,portal
+APT-0036,EMMA Khan,Neurology,2024-04-12 10:30,showed_up,portal
+APT-0037,NINA HOFFMANN,Dermatology,2024-03-25 12:45,no_show,portal
+APT-0038,David HOFFMANN,Dermatology,2024-06-22 09:45,showed_up,portal
+APT-0039,Maria Khan,Neurology,2024-04-25 14:30,showed_up,portal
+APT-0040,David WAGNER,Psychiatry,2024-01-08 12:00,showed_up,portal
+APT-0041,Ahmed MEYER,Dermatology,2024-10-26 14:30,showed_up,portal
+APT-0042,anna Weber,Pediatrics,2024-08-29 08:30,showed_up,portal
+APT-0043,EMMA MEYER,Pediatrics,2024-11-27 09:45,showed_up,portal
+APT-0044,lisa Taylor,Dermatology,2024-11-28 14:00,showed_up,portal
+APT-0045,Maria Fischer,Cardiology,2024-06-04 15:00,showed_up,portal
+APT-0046,James Brown,Neurology,2024-07-17 15:30,showed_up,portal
+APT-0047,Maria Schmidt,Psychiatry,2024-10-27 10:45,showed_up,portal
+APT-0048,SARAH Anderson,General Practice,2024-11-11 14:30,showed_up,portal
+APT-0049,NINA Brown,,2024-07-08 11:45,showed_up,portal
+APT-0050,anna Garcia,Pediatrics,2024-07-04 09:30,showed_up,portal
+APT-0051,Ahmed Brown,Oncology,2024-02-01 14:30,showed_up,portal
+APT-0052,anna HOFFMANN,Orthopedics,2024-08-20 09:15,showed_up,portal
+APT-0053,thomas Fischer,Cardiology,2024-01-26 13:15,showed_up,portal
+APT-0054,john Becker,Pediatrics,2024-02-05 16:15,showed_up,portal
+APT-0055,Fatima Fischer,Pediatrics,2024-06-17 10:00,showed_up,portal
+APT-0056,julia Anderson,Neurology,2024-03-07 16:30,showed_up,portal
+APT-0057,thomas Martinez,Orthopedics,2024-12-04 08:15,no_show,portal
+APT-0058,OLIVER Garcia,,2024-05-01 17:30,showed_up,portal
+APT-0059,lisa Fischer,,2024-05-15 08:15,showed_up,portal
+APT-0060,OLIVER Khan,Orthopedics,2024-02-02 15:45,showed_up,portal
+APT-0061,john Jones,Orthopedics,2024-08-19 16:15,showed_up,portal
+APT-0062,Sofia Taylor,Cardiology,2024-12-03 16:30,showed_up,portal
+APT-0063,Kevin Anderson,Cardiology,2024-02-01 15:45,showed_up,portal
+APT-0064,julia Becker,Orthopedics,2024-09-08 15:00,no_show,portal
+APT-0065,lisa Martinez,Oncology,2024-11-07 10:00,showed_up,portal
+APT-0066,Chris Taylor,Oncology,2024-07-14 17:30,showed_up,portal
+APT-0067,NINA MUELLER,Psychiatry,2024-02-20 09:15,showed_up,portal
+APT-0068,Ahmed Becker,Pediatrics,2024-07-30 13:45,showed_up,portal
+APT-0069,EMMA WAGNER,Orthopedics,2024-06-09 14:30,showed_up,portal
+APT-0070,James HOFFMANN,Oncology,2024-03-19 15:00,showed_up,portal
+APT-0071,Fatima Schmidt,Orthopedics,2024-02-17 14:00,no_show,portal
+APT-0072,NINA SCHULZ,Oncology,2024-03-07 16:00,showed_up,portal
+APT-0073,Sofia Fischer,Oncology,2024-12-09 09:45,showed_up,portal
+APT-0074,David Wolf,Psychiatry,2024-01-27 12:30,showed_up,portal
+APT-0075,Fatima Khan,Pediatrics,2024-03-20 15:15,showed_up,portal
+APT-0076,Chris WAGNER,Oncology,2024-10-11 13:00,showed_up,portal
+APT-0077,laura Wilson,Pediatrics,2024-08-07 16:00,showed_up,portal
+APT-0078,Fatima HOFFMANN,Dermatology,2024-01-15 10:30,showed_up,portal
+APT-0079,Chris Weber,Dermatology,2024-06-22 13:00,showed_up,portal
+APT-0080,MICHAEL Taylor,Neurology,2024-10-16 14:00,showed_up,portal
+APT-0081,SARAH Brown,Cardiology,2024-02-16 16:15,no_show,portal
+APT-0082,NINA Jones,General Practice,2024-06-23 10:30,showed_up,portal
+APT-0083,julia Schmidt,Oncology,2024-10-17 17:00,showed_up,portal
+APT-0084,Maria Wilson,Neurology,2024-03-21 17:00,showed_up,portal
+APT-0085,Maria Jones,Dermatology,2024-08-14 14:45,showed_up,portal
+APT-0086,Sofia Wolf,Psychiatry,2024-05-19 11:00,showed_up,portal
+APT-0087,anna Robinson,Orthopedics,2024-05-25 17:45,showed_up,portal
+APT-0088,john WAGNER,Dermatology,2024-01-24 11:45,showed_up,portal
+APT-0089,anna MUELLER,Cardiology,2024-01-04 11:30,showed_up,portal
+APT-0090,Kevin Brown,Neurology,2024-05-10 12:30,no_show,portal
+APT-0091,lisa HOFFMANN,General Practice,2024-08-08 10:15,showed_up,portal
+APT-0092,Daniel Wilson,Pediatrics,2024-09-13 16:30,showed_up,portal
+APT-0093,Chris Wolf,Cardiology,2024-08-11 08:45,showed_up,portal
+APT-0094,julia Weber,Oncology,2024-10-21 14:45,showed_up,portal
+APT-0095,anna Anderson,Psychiatry,2024-05-28 09:45,showed_up,portal
+APT-0096,SARAH Anderson,,2024-06-15 10:45,showed_up,portal
