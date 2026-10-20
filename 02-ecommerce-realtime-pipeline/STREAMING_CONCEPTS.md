@@ -377,7 +377,7 @@ Services depend on the `Broker` *interface* (`pipeline/broker/base.py`), never o
 |---|---|
 | Every test run needs credentials and network | Runs offline, on a plane |
 | Shared dev environments conflict | Each developer has their own broker file |
-| Tests are slow and cost money | 36 tests in a few seconds, free |
+| Tests are slow and cost money | 40 tests in seconds, free |
 | Hard to simulate crashes or time | `FakeClock` fast-forwards ack deadlines in tests |
 
 ### The three-step ladder

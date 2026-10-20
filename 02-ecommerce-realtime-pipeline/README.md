@@ -24,7 +24,7 @@ python run_pipeline.py          # 60 seconds of live traffic, then a report
 | **Stream vs batch reconciliation** | `gold.window_reconciliation` in `sql/models.sql` |
 | **Local-first development**: ports and adapters, swappable infra | `pipeline/broker/__init__.py` |
 
-The theory behind each concept is in **[STREAMING_CONCEPTS.md](./STREAMING_CONCEPTS.md)**.
+The theory behind each concept is in **[STREAMING_CONCEPTS.md](./STREAMING_CONCEPTS.md)**. How real stores (Shopify, GA4, CDC) feed a pipeline like this is in **[REAL_WORLD_SOURCES.md](./REAL_WORLD_SOURCES.md)**, with a runnable Shopify webhook example.
 
 ## Architecture
 
@@ -129,7 +129,7 @@ To use a real GCP project instead, unset `PUBSUB_EMULATOR_HOST`, run `gcloud aut
 python -m pytest -q
 ```
 
-36 tests specify the broker semantics (fan-out, redelivery, DLQ), the contracts, windowing, sink idempotency, and an end-to-end run that checks every number adds up.
+40 tests specify the broker semantics (fan-out, redelivery, DLQ), the contracts, windowing, sink idempotency, the Shopify mapping, and an end-to-end run that checks every number adds up.
 
 ## Data Model (DuckDB)
 
@@ -202,6 +202,7 @@ The producer is seeded, so the same number of events always produces the same da
 │   │   ├── aggregator.py       # event-time windows → window-results
 │   │   ├── alerts.py           # rules → alerts
 │   │   └── sink.py             # micro-batched, idempotent DuckDB writer
+│   ├── sources/shopify.py      # Shopify webhook -> our event contract
 │   ├── contracts.py            # validation + upcasting
 │   ├── windowing.py            # tumbling windows, watermark, dedup cache
 │   ├── report.py               # summary printed after a run
@@ -209,10 +210,12 @@ The producer is seeded, so the same number of events always produces the same da
 ├── sql/
 │   ├── tables.sql              # sink tables (bronze / quarantine / gold / ops)
 │   └── models.sql              # silver + gold views
+├── samples/                    # sample Shopify orders/create webhook
 ├── tests/                      # pytest suite
 ├── run_pipeline.py             # one-command demo
 ├── docker-compose.yml          # optional Pub/Sub emulator
 ├── STREAMING_CONCEPTS.md       # the theory, in depth
+├── REAL_WORLD_SOURCES.md       # database copies vs events, Shopify example
 └── README.md
 ```
 

@@ -1,0 +1,26 @@
+{
+  "id": 820982911946154508,
+  "admin_graphql_api_id": "gid://shopify/Order/820982911946154508",
+  "name": "#1001",
+  "created_at": "2026-10-15T10:02:00-04:00",
+  "updated_at": "2026-10-15T10:02:01-04:00",
+  "currency": "EUR",
+  "total_price": "129.90",
+  "subtotal_price": "119.90",
+  "total_tax": "10.00",
+  "financial_status": "paid",
+  "source_name": "web",
+  "cart_token": "c1-7f3a9b2e4d",
+  "checkout_token": "ck-55aa21f0",
+  "customer": {
+    "id": 115310627314723954,
+    "email": "jane@example.com",
+    "first_name": "Jane"
+  },
+  "line_items": [
+    {"id": 866550311766439020, "product_id": 632910392, "variant_id": 808950810,
+     "sku": "P-2002", "title": "Rain Jacket", "quantity": 1, "price": "89.00"},
+    {"id": 141249953214522974, "product_id": 921728736, "variant_id": 457924702,
+     "sku": "P-6002", "title": "Field Guide", "quantity": 1, "price": "30.90"}
+  ]
+}
