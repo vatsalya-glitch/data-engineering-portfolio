@@ -1,0 +1,70 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# PIPELINE TOPOLOGY: topics, subscriptions, and service settings
+#
+# Every service talks to every other service ONLY through topics.
+# Nothing calls anything directly - that is what makes it event-driven.
+#
+#   producer ──► raw-events ──► validator ──► clean-events ──┬──► sink        ──► DuckDB
+#                                   │                         ├──► aggregator ──► window-results ──► sink
+#                                   ▼                         └──► alerts     ──► alerts         ──► sink
+#                             invalid-events ──► sink
+#
+#   Any subscription whose messages keep failing ──► dead-letter ──► sink
+#   (except sink-dlq-sub itself - a DLQ of the DLQ would loop)
+# ──────────────────────────────────────────────────────────────────────────────
+
+broker:
+  # "local"  - SQLite-backed Pub/Sub clone. Zero setup, works offline.
+  # "pubsub" - Google Cloud Pub/Sub (the emulator locally, or a real project).
+  # Override at runtime with the BROKER environment variable or --broker flag.
+  type: local
+  local:
+    path: state/broker.sqlite3
+  pubsub:
+    # Any id works with the emulator. Set PUBSUB_EMULATOR_HOST=localhost:8085.
+    project_id: local-ecommerce
+
+topics:
+  - raw-events        # everything the storefront emits, untrusted
+  - clean-events      # validated, normalised events (the "contract" topic)
+  - invalid-events    # events that broke the contract (business quarantine)
+  - window-results    # aggregator output: closed windows + late events
+  - alerts            # alerts raised by the rules engine
+  - dead-letter       # messages a subscriber failed to process N times
+
+# Same fields as a real Pub/Sub subscription.
+# A topic with several subscriptions = fan-out: each subscription gets a copy.
+subscriptions:
+  validator-sub:      {topic: raw-events,     ack_deadline_seconds: 10, max_delivery_attempts: 5, dead_letter_topic: dead-letter}
+  sink-events-sub:    {topic: clean-events,   ack_deadline_seconds: 30, max_delivery_attempts: 5, dead_letter_topic: dead-letter}
+  aggregator-sub:     {topic: clean-events,   ack_deadline_seconds: 10, max_delivery_attempts: 5, dead_letter_topic: dead-letter}
+  alerts-sub:         {topic: clean-events,   ack_deadline_seconds: 10, max_delivery_attempts: 5, dead_letter_topic: dead-letter}
+  sink-invalid-sub:   {topic: invalid-events, ack_deadline_seconds: 30, max_delivery_attempts: 5, dead_letter_topic: dead-letter}
+  sink-windows-sub:   {topic: window-results, ack_deadline_seconds: 30, max_delivery_attempts: 5, dead_letter_topic: dead-letter}
+  sink-alerts-sub:    {topic: alerts,         ack_deadline_seconds: 30, max_delivery_attempts: 5, dead_letter_topic: dead-letter}
+  sink-dlq-sub:       {topic: dead-letter,    ack_deadline_seconds: 30}   # no DLQ for the DLQ itself
+
+producer:
+  events_per_second: 25
+  seed: 42
+  # Real-world messiness, injected on purpose so the pipeline has to cope:
+  duplicate_rate: 0.03          # client retries -> same event_id published twice
+  late_rate: 0.05               # mobile app was offline -> event_time in the past
+  late_delay_seconds: [3, 40]   # how far in the past a late event is
+  malformed_rate: 0.02          # broken payloads -> must end up in invalid-events
+  v1_rate: 0.30                 # old app versions still send schema_version 1
+
+aggregator:
+  window_seconds: 10            # tumbling event-time windows
+  allowed_lateness_seconds: 10  # watermark = max(event_time) - allowed_lateness
+  dedup_cache_size: 50000       # remember this many event_ids to drop duplicates
+
+alerts:
+  high_value_order_threshold: 400.0
+  payment_failure_burst: 3      # N failed payments by one user ...
+  payment_failure_window_seconds: 300   # ... within this many seconds
+
+sink:
+  database: duckdb/ecommerce.duckdb
+  flush_max_rows: 500           # flush the micro-batch when it gets this big ...
+  flush_interval_seconds: 2.0   # ... or this old, whichever comes first

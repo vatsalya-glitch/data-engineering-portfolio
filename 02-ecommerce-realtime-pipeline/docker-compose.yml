@@ -1,0 +1,13 @@
+# Optional: the official Google Cloud Pub/Sub emulator.
+# The local SQLite broker needs none of this - use it when you want to run the
+# exact same pipeline against real Pub/Sub APIs.
+#
+#   docker compose up -d
+#   export PUBSUB_EMULATOR_HOST=localhost:8085
+#   BROKER=pubsub python run_pipeline.py
+services:
+  pubsub-emulator:
+    image: gcr.io/google.com/cloudsdktool/google-cloud-cli:emulators
+    command: gcloud beta emulators pubsub start --project=local-ecommerce --host-port=0.0.0.0:8085
+    ports:
+      - "8085:8085"

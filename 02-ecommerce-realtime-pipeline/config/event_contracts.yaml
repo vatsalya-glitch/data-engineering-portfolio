@@ -1,0 +1,85 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# EVENT CONTRACTS: what a valid event looks like
+#
+# The validator enforces these rules. Anything that breaks them is routed to the
+# invalid-events topic instead of silently corrupting downstream tables.
+#
+# Types: string | integer | number | timestamp | list
+# ──────────────────────────────────────────────────────────────────────────────
+
+# Versions the validator accepts. v1 events are "upcast" to the latest version
+# so downstream consumers only ever see one shape (see schema_evolution below).
+supported_schema_versions: [1, 2]
+latest_schema_version: 2
+
+# Fields every event carries, regardless of type.
+envelope:
+  required:
+    event_id: string          # globally unique - the idempotency key
+    event_type: string
+    schema_version: integer
+    event_time: timestamp     # when it happened on the client (event time)
+    session_id: string
+  optional:
+    user_id: string           # null for anonymous visitors
+    channel: string           # added in v2: web | ios | android
+
+# How older versions are brought up to date.
+schema_evolution:
+  1:
+    # v1 had no channel field. Fill a default instead of failing.
+    defaults:
+      channel: unknown
+
+# Allowed clock skew: events claiming to be from the future are rejected.
+max_future_skew_seconds: 60
+
+event_types:
+  page_viewed:
+    payload:
+      page: string
+
+  product_viewed:
+    payload:
+      product_id: string
+      category: string
+      price: number
+
+  add_to_cart:
+    payload:
+      product_id: string
+      category: string
+      price: number
+      quantity: integer
+
+  remove_from_cart:
+    payload:
+      product_id: string
+      quantity: integer
+
+  checkout_started:
+    payload:
+      cart_value: number
+      item_count: integer
+
+  order_placed:
+    payload:
+      order_id: string
+      order_total: number
+      currency: string
+      items: list             # [{product_id, category, quantity, unit_price}]
+    rules:
+      non_negative: [order_total]
+      non_empty: [items]
+
+  payment_succeeded:
+    payload:
+      order_id: string
+      amount: number
+    rules:
+      non_negative: [amount]
+
+  payment_failed:
+    payload:
+      order_id: string
+      reason: string
