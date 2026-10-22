@@ -186,7 +186,7 @@ The producer is seeded, so the same number of events always produces the same da
 ## Project Structure
 
 ```
-02-ecommerce-realtime-pipeline/
+03-ecommerce-realtime-pipeline/
 ├── config/
 │   ├── pipeline.yaml           # topology: topics, subscriptions, service settings
 │   └── event_contracts.yaml    # what a valid event looks like + schema evolution
