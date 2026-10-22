@@ -12,6 +12,14 @@ Practical learning projects for data engineering, pipelines, and privacy.
 
 [Go to project →](./01-phi-masking) | [Deep guide](./01-phi-masking/MASKING_TECHNIQUES.md)
 
+### 02 - Data Freshness Check
+
+**What:** Check a table is fresh before using it, and ingest it on the fly if it isn't  
+**Tech:** Python, DuckDB, YAML, SQL (mapped to BigQuery + Airflow)  
+**Topics:** Freshness checks, idempotent ingestion, shared tables across DAGs, control tables
+
+[Go to project →](./02-data-freshness-check)
+
 ## Quick Start
 
 ```bash
@@ -19,6 +27,10 @@ cd 01-phi-masking
 pip install -r requirements.txt
 python scripts/generate_data.py
 python run_pipeline.py
+
+cd ../02-data-freshness-check
+pip install -r requirements.txt
+python run_demo.py
 ```
 
 ## Structure
@@ -30,6 +42,13 @@ python run_pipeline.py
 ├── data/                    # Sample data
 ├── README.md                # Project overview
 └── MASKING_TECHNIQUES.md    # Detailed guide
+
+02-data-freshness-check/
+├── config/freshness_rules.yaml   # Per-table freshness check
+├── ingestion/                    # One idempotent SQL per table
+├── common/ensure_fresh.py        # Check → ingest → re-check step
+├── dags/                         # Two DAGs sharing one table
+└── run_demo.py                   # Plays out 5 scenarios
 ```
 
 ## License

@@ -1,0 +1,24 @@
+# One entry per table. The ingestion script is always ingestion/<table>.sql
+#
+# check: how we decide the table is fresh
+#   recency        -> MAX(_loaded_at) is newer than max_age_hours   (simple, weakest)
+#   partition      -> rows exist for run_date                       (date-aware, rerun-safe)
+#   control_table  -> a SUCCESS row exists in _freshness_log        (explicit handshake, strongest)
+# auto_ingest: if stale, may this step run the ingestion itself? (false = just fail)
+
+raw_customers:
+  check: recency
+  max_age_hours: 24
+  auto_ingest: true
+
+raw_orders:
+  check: partition
+  date_column: order_date
+  min_rows: 1
+  auto_ingest: true
+
+raw_payments:
+  check: control_table
+  date_column: payment_date
+  min_rows: 1
+  auto_ingest: true
