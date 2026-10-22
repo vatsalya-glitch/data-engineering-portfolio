@@ -1,0 +1,4 @@
+payment_id,order_id,payment_date,amount,method
+9001,1001,2026-10-20,120.50,card
+9002,1002,2026-10-20,75.00,paypal
+9003,1003,2026-10-20,210.00,card
