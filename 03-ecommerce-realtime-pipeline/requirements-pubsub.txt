@@ -1,0 +1,3 @@
+# Optional: only needed to run against the Google Pub/Sub emulator (or real GCP)
+-r requirements.txt
+google-cloud-pubsub>=2.20

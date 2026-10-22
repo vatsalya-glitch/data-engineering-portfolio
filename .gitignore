@@ -24,3 +24,7 @@ venv/
 # Project-specific
 *.log
 .ipynb_checkpoints/
+state/
+*.sqlite3
+*.sqlite3-*
+.pytest_cache/

@@ -20,6 +20,14 @@ Practical learning projects for data engineering, pipelines, and privacy.
 
 [Go to project →](./02-data-freshness-check)
 
+### 03 - E-commerce Real-Time Pipeline
+
+**What:** Stream shopper events through Pub/Sub into DuckDB, on your laptop  
+**Tech:** Python, Pub/Sub (local SQLite broker or Google emulator), DuckDB, SQL, pytest  
+**Topics:** Streaming ingestion, event-driven services, at-least-once delivery, idempotency, dead letters, data contracts, schema evolution, windows and watermarks, local-first development
+
+[Go to project →](./03-ecommerce-realtime-pipeline) | [Deep guide](./03-ecommerce-realtime-pipeline/STREAMING_CONCEPTS.md)
+
 ## Quick Start
 
 ```bash
@@ -31,6 +39,10 @@ python run_pipeline.py
 cd ../02-data-freshness-check
 pip install -r requirements.txt
 python run_demo.py
+
+cd ../03-ecommerce-realtime-pipeline
+pip install -r requirements.txt
+python run_pipeline.py
 ```
 
 ## Structure
@@ -49,6 +61,15 @@ python run_demo.py
 ├── common/ensure_fresh.py        # Check → ingest → re-check step
 ├── dags/                         # Two DAGs sharing one table
 └── run_demo.py                   # Plays out 5 scenarios
+
+03-ecommerce-realtime-pipeline/
+├── config/                  # Topology (topics, subscriptions) + event contracts
+├── pipeline/broker/         # Broker interface: local SQLite Pub/Sub + Google Pub/Sub
+├── pipeline/services/       # producer, validator, aggregator, alerts, sink
+├── sql/                     # DuckDB tables + bronze/silver/gold models
+├── tests/                   # pytest: broker semantics, contracts, windows, end-to-end
+├── README.md                # Project overview
+└── STREAMING_CONCEPTS.md    # Detailed guide
 ```
 
 ## License
