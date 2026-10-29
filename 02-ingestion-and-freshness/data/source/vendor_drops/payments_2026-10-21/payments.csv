@@ -1,0 +1,2 @@
+payment_id,order_id,payment_date,amount,method
+9004,1004,2026-10-21,48.90,card
