@@ -8,8 +8,8 @@ Part 1 - the chain: two DAGs share raw_orders and check freshness before using i
   4. Finance DAG, next day     -> vendor file has no _SUCCESS marker yet, the DAG fails loudly
 
 Part 2 - ingestion types up close
-  5. CDC, two change files     -> latest change wins, deletes apply, watermark moves forward
-  6. CDC rerun                 -> no new files after the watermark, nothing changes
+  5. CDC, two Debezium files   -> latest change wins, deletes apply, watermark moves forward
+  6. CDC rerun                 -> both files are in the load history, nothing changes
   7. Bad vendor file           -> audit finds duplicate keys, nothing is published
 
 Usage:
@@ -74,7 +74,7 @@ def main():
 
     print("\n\nPART 2 - INGESTION TYPES UP CLOSE")
 
-    step("5. CDC: apply the change log, one 30-minute file per run")
+    step("5. CDC: apply the Debezium change files, one file per run")
     for _ in range(2):
         ingest(con, "raw_order_status", "2026-10-20")
         show_order_status(con)

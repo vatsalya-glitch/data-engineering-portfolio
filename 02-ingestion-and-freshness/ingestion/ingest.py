@@ -8,12 +8,11 @@ Each type only decides two things, then hands over to write_audit_publish():
 Entry point: ingest(con, table, run_date)
 """
 
-import re
 from datetime import datetime
 from pathlib import Path
 
 from common.config import TABLES
-from common.control_log import ensure_log_table, last_watermark
+from common.control_log import ensure_log_table, last_watermark, loaded_files
 from ingestion.wap import write_audit_publish
 
 # --- Publish strategies ---------------------------------------------------
@@ -35,16 +34,16 @@ def publish_replace_day(table, date_column, run_date):
 
 
 def publish_merge(table, key, cdc=False):
-    """Update rows that exist, insert new ones. For CDC, also apply deletes."""
+    """Update rows that exist, insert new ones. For CDC, also apply deletes (__op = 'd')."""
     def publish(con, pub):
-        drop_op = "EXCLUDE (op)" if cdc else ""
+        drop_op = "EXCLUDE (__op)" if cdc else ""
         con.execute(f"CREATE TABLE IF NOT EXISTS {table} AS SELECT * {drop_op} FROM {pub} LIMIT 0")
         cols = [c for c, *_ in con.execute(f"DESCRIBE {table}").fetchall()]
         set_cols = ", ".join(f"{c} = s.{c}" for c in cols if c != key)
         insert_cols = ", ".join(cols)
         insert_vals = ", ".join(f"s.{c}" for c in cols)
-        delete_clause = "WHEN MATCHED AND s.op = 'DELETE' THEN DELETE" if cdc else ""
-        not_deleted = "AND s.op <> 'DELETE'" if cdc else ""
+        delete_clause = "WHEN MATCHED AND s.__op = 'd' THEN DELETE" if cdc else ""
+        not_deleted = "AND s.__op <> 'd'" if cdc else ""
         con.execute(f"""
             MERGE INTO {table} t USING {pub} s ON t.{key} = s.{key}
             {delete_clause}
@@ -90,32 +89,26 @@ def ingest_file_drop(con, table, run_date):
     )
 
 
-CDC_FILE = re.compile(r"changes_(\d{4}-\d{2}-\d{2})_\d{2}-\d{2}_to_(\d{2})-(\d{2})\.csv")
-
-
-def _window_end(path):
-    """changes_2026-10-20_10-00_to_10-30.csv -> 2026-10-20 10:30"""
-    day, hour, minute = CDC_FILE.fullmatch(path.name).groups()
-    return datetime.fromisoformat(f"{day} {hour}:{minute}")
-
-
 def ingest_cdc(con, table, run_date):
-    """Each run applies the NEXT change file after the watermark (one batch per run)."""
+    """
+    Each run applies the NEXT change file not yet in the load history (one batch per run).
+    Files live in dt=YYYY-MM-DD/hour=HH/ folders and are named <UTC timestamp>_<sequence>.csv,
+    so sorting the paths as text gives the order they were written in.
+    """
     rule = TABLES[table]
-    watermark = last_watermark(con, table)
-    pending = [f for f in sorted(Path(rule["source"]).glob("changes_*.csv"))
-               if watermark is None or _window_end(f) > watermark]
+    done = loaded_files(con, table)
+    pending = [f for f in sorted(Path(rule["source"]).rglob("*.csv")) if str(f) not in done]
     if not pending:
-        print(f"    ✓ {table}: no new change files after {watermark}, nothing to do")
+        print(f"    ✓ {table}: every change file is already applied, nothing to do")
         return "NO_NEW_DATA"
 
     next_file = pending[0]
-    print(f"    … {table}: applying {next_file.name}")
+    print(f"    … {table}: applying {next_file.relative_to(rule['source'])}")
     return write_audit_publish(
         con, table, run_date,
         params={"source_file": str(next_file)},
         publish=publish_merge(table, rule["key"], cdc=True),
-        watermark=_window_end(next_file),
+        watermark_column="__source_ts",
     )
 
 

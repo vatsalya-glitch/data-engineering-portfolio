@@ -42,15 +42,15 @@ def audit(con, table):
     return rows, problems
 
 
-def write_audit_publish(con, table, run_date, params, publish,
-                        watermark=None, watermark_column=None):
+def write_audit_publish(con, table, run_date, params, publish, watermark_column=None):
     """
     Run one load. `publish(con, pub_table)` moves the audited rows into the real table.
-    The watermark is either given (CDC: the change file's end time) or read from
-    staging (incremental: the newest watermark_column value).
+    If watermark_column is given, the newest value in staging becomes the watermark:
+    "this table is complete up to here".
     """
     ensure_log_table(con)
     batch_id = f"{table}-{uuid.uuid4().hex[:8]}"
+    source_file = params["source_file"]
 
     write(con, table, params)
     rows, problems = audit(con, table)
@@ -61,10 +61,11 @@ def write_audit_publish(con, table, run_date, params, publish,
         return "NO_NEW_DATA"
 
     if problems:
-        write_log(con, table, run_date, "FAILED", rows, batch_id)
+        write_log(con, table, run_date, "FAILED", rows, batch_id, source_file)
         print(f"    ✗ audit failed for {table}: {', '.join(problems)} -> NOT published")
         return "FAILED"
 
+    watermark = None
     if watermark_column:
         watermark = con.execute(f"SELECT max({watermark_column}) FROM stg_{table}").fetchone()[0]
 
@@ -72,13 +73,13 @@ def write_audit_publish(con, table, run_date, params, publish,
     con.execute(
         f"""CREATE OR REPLACE TEMP TABLE pub_{table} AS
             SELECT *, now() AS _loaded_at, ? AS _batch_id, ? AS _source FROM stg_{table}""",
-        [batch_id, params["source_file"]],
+        [batch_id, source_file],
     )
 
     con.begin()
     try:
         publish(con, f"pub_{table}")
-        write_log(con, table, run_date, "SUCCESS", rows, batch_id, watermark)
+        write_log(con, table, run_date, "SUCCESS", rows, batch_id, source_file, watermark)
         con.commit()
     except Exception:
         con.rollback()
