@@ -4,7 +4,7 @@
 #   snapshot     -> read the whole source, swap the table          (small dimension tables)
 #   incremental  -> read rows newer than the watermark, MERGE      (big growing tables)
 #   file_drop    -> wait for the vendor's _SUCCESS marker, load    (files from partners)
-#   cdc          -> apply the next change-log file with MERGE      (mirroring a database)
+#   cdc          -> apply the next Debezium change file with MERGE (mirroring a database)
 #
 # FRESHNESS (how consumers check the table before using it)
 #   recency        -> MAX(_loaded_at) is newer than max_age_hours   (simple, weakest)
@@ -40,5 +40,5 @@ raw_payments:
 
 raw_order_status:
   ingestion: cdc
-  source: data/source/cdc
+  source: data/source/cdc/order_status
   key: order_id

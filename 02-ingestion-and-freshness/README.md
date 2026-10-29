@@ -27,23 +27,33 @@
 | **Snapshot** | `raw_customers` | Reads the whole source, swaps the table | Small reference tables |
 | **Incremental** | `raw_orders` | Reads rows with `updated_at` newer than the last **watermark**, then `MERGE` | Big, growing tables |
 | **File drop** | `raw_payments` | Waits for the vendor's `_SUCCESS` marker, then replaces that day | Files from partners or other teams |
-| **CDC** | `raw_order_status` | Applies the next change-log file: latest change per key wins, deletes are applied | Mirroring a production database |
+| **CDC** | `raw_order_status` | Applies the next Debezium change file: latest change per key wins, deletes are applied | Mirroring a production database |
 
-### CDC, with sample change files
-There's no live database here. Two sample files stand in for one hour of change log, arriving in 30-minute batches:
+### CDC, with sample Debezium change files
+There's no live database here. Two sample files stand in for one hour of change events, in the shape **Debezium** writes them once its `ExtractNewRecordState` transform flattens each event into a row:
 
 ```
-data/source/cdc/changes_2026-10-20_10-00_to_10-30.csv
-data/source/cdc/changes_2026-10-20_10-30_to_11-00.csv
+data/source/cdc/order_status/
+└── dt=2026-10-20/hour=10/                 ← Hive-style date/hour folders
+    ├── 20261020T100000Z_000001.csv        ← UTC timestamp (ISO 8601) + sequence number
+    └── 20261020T103000Z_000002.csv
 
-op,order_id,status,changed_at
-INSERT,1001,created,2026-10-20 10:02:00
-UPDATE,1001,paid,2026-10-20 10:15:00
-UPDATE,1001,shipped,2026-10-20 10:41:00   ← latest wins: 1001 ends as "shipped"
-DELETE,1002,,2026-10-20 10:50:00          ← 1002 is removed
+order_id,status,__op,__source_ts_ms,__lsn
+1001,created,c,1792490520000,24001101
+1001,paid,u,1792491300000,24001104
+1001,shipped,u,1792492860000,24001106     ← latest __lsn wins: 1001 ends as "shipped"
+1002,paid,d,1792493400000,24001108        ← d = delete: 1002 is removed
 ```
 
-After each file, the watermark says **"complete up to 10:30"**, then **"up to 11:00"**. Rerunning skips files that are already applied.
+| Field | Meaning |
+|-------|---------|
+| `__op` | `c` create, `u` update, `d` delete (`r` = initial snapshot read) |
+| `__source_ts_ms` | When the change was committed in the source database (epoch millis, UTC) |
+| `__lsn` | Position in the database's change log: the true order of changes |
+
+Two things make it safe to rerun, as in real CDC pipelines:
+- **Load history:** every applied file is recorded in `_freshness_log`, so a file is never applied twice.
+- **Watermark from the events, not the file name:** after each file the table is "complete up to" its newest `__source_ts_ms` (10:24, then 10:58).
 
 ### One pattern for all four: Write → Audit → Publish
 
@@ -93,8 +103,8 @@ python run_demo.py
 | 2 | Finance DAG next | `raw_orders` is already fresh; payments are loaded from the file drop |
 | 3 | Sales DAG rerun | Everything is fresh, nothing is re-ingested |
 | 4 | Finance DAG, next day | Vendor file has no `_SUCCESS` yet, so the DAG fails |
-| 5 | CDC, two change files | Latest change wins, deletes apply, watermark moves 10:30 → 11:00 |
-| 6 | CDC rerun | No new files after the watermark, nothing changes |
+| 5 | CDC, two Debezium files | Latest change wins, deletes apply, watermark moves 10:24 → 10:58 |
+| 6 | CDC rerun | Both files are in the load history, nothing changes |
 | 7 | Vendor file with duplicate rows | Audit rejects it, nothing is published |
 
 ## Structure
@@ -102,7 +112,7 @@ python run_demo.py
 ```
 02-ingestion-and-freshness/
 ├── config/tables.yaml        # per table: ingestion type + freshness check
-├── data/source/              # the "external sources": CSV, vendor drops, CDC change logs
+├── data/source/              # the "external sources": CSV, vendor drops, Debezium change files
 ├── ingestion/
 │   ├── sql/                  # WRITE step: one SQL per table
 │   ├── wap.py                # write → audit → publish
@@ -120,7 +130,7 @@ python run_demo.py
 | DuckDB | BigQuery |
 | `customers.csv`, `orders.csv` | Source databases, read via federated queries (Cloud SQL) or extract jobs |
 | `vendor_drops/` + `_SUCCESS` | A GCS bucket; vendors upload the marker last; a GCS sensor or Pub/Sub notification triggers the load |
-| `cdc/changes_*.csv` | Datastream, Debezium or Fivetran writing change events continuously |
+| `cdc/order_status/dt=…/hour=…/` | Debezium → Kafka → a GCS sink connector writing these folders (often JSON or Avro, not CSV); Datastream is the managed Google option |
 | Staging temp table + swap | A `_staging` table, then `MERGE`, or `WRITE_TRUNCATE` to one partition (`raw_payments$20261020`) |
 | `dags/*.py` functions | Airflow DAGs (Cloud Composer) |
 | `run_date` | Airflow's `{{ ds }}`, passed as a `@run_date` query parameter |
