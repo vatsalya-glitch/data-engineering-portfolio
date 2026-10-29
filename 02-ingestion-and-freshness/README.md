@@ -17,11 +17,14 @@ Two pipelines (DAGs), owned by different people, use this data:
 - `sales_report_dag` reads orders + customers to build the daily sales report.
 - `finance_dag` reads orders + payments to check that every order was paid.
 
-Nobody guarantees the data is loaded before these pipelines run. So, sooner or later:
-- Finance runs **before payments arrive**, and paid orders show up as unpaid.
-- A vendor file is read **while it's still being written**, so half the payments are missing.
-- A rerun **loads the same orders twice**, and revenue is double-counted.
-- A load **fails halfway**, and a report is built on a partial table.
+Nobody guarantees the data is loaded before these pipelines run. So, sooner or later, things go wrong. Each one has two sides: what people **see** at the shop, and the data engineering **problem** behind it:
+
+| What happens at the shop (the situation) | The problem behind it |
+|------------------------------------------|-----------------------|
+| Finance runs **before payments arrive**, and paid orders show up as unpaid | A pipeline **silently uses stale data**, because nothing told it the table wasn't loaded yet |
+| A vendor file is read **while it's still being written**, so half the payments are missing | A file is read **before it's complete** |
+| A rerun **loads the same orders twice**, and revenue is double-counted | The load **isn't safe to rerun**, so it duplicates rows |
+| A load **fails halfway**, and a report is built on a partial table | A pipeline reads a **partial table** |
 
 **The question this project answers:** *How does a pipeline know that the data it needs is really ready?*
 
