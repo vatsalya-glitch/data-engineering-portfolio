@@ -20,6 +20,30 @@
 - A vendor file is read **while it's still being written**
 - A rerun **duplicates rows**
 
+## The Expert Rule: Announce, Don't Trigger
+
+> **A producer should announce, not trigger.** Ingestion says *"raw_orders is loaded, complete up to T"*. Each consumer checks for itself and decides whether it has everything it needs.
+
+That's the whole design of this project: ingestion writes the announcement to `_freshness_log`, and every DAG checks it before running.
+
+**Why not have the ingestion DAG simply trigger the next DAG?** It's the obvious option, and it's fine for one source feeding one or two consumers. It breaks once ingestion is split by source. `finance_dag` needs orders (database) **and** payments (vendor file), loaded by two separate pipelines:
+
+```
+05:10  orders ingestion finishes   → triggers finance_dag (run #1): new orders, OLD payments → wrong report
+05:40  payments ingestion finishes → triggers finance_dag (run #2): now correct
+```
+
+| Push: producer triggers consumers | Pull: producer announces, consumer checks |
+|-----------------------------------|-------------------------------------------|
+| A consumer with two inputs runs **twice**, the first time with half-fresh data | Runs **once**, when all its inputs are ready |
+| CDC batches every 5 min → the consumer runs **288 times a day** | The consumer asks one question: "complete up to midnight?" |
+| The producer must list every consumer, so every new pipeline means editing it | The producer never changes; new consumers check for themselves |
+| If the producer never runs, consumers **silently** never start | The consumer fails **loudly**: "raw_orders is stale" |
+
+**Other options you'll meet:**
+- **Airflow Datasets / Assets** (`schedule=[raw_orders, raw_payments]`) run a DAG once, when *all* its inputs have been updated. That's the same rule, built into the scheduler.
+- Teams that use them still keep a freshness check inside the DAG as a gate, because "the task succeeded" doesn't guarantee "the data is right".
+
 ## Part 1: Ingestion, four types
 
 | Type | Table | How it loads | Typical real use |
