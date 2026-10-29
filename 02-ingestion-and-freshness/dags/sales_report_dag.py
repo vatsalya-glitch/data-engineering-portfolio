@@ -5,7 +5,7 @@ Each "task" is a plain function so the project runs without Airflow.
 See the README for the same DAG written for Airflow + BigQuery.
 """
 
-from common.ensure_fresh import ensure_fresh
+from freshness.ensure_fresh import ensure_fresh
 
 
 def run(con, run_date):

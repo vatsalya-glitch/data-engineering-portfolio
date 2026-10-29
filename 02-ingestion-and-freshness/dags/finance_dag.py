@@ -4,7 +4,7 @@ FINANCE DAG - needs raw_orders + raw_payments.
 Shares raw_orders with the sales report DAG.
 """
 
-from common.ensure_fresh import ensure_fresh
+from freshness.ensure_fresh import ensure_fresh
 
 
 def run(con, run_date):

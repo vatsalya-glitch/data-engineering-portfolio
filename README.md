@@ -12,13 +12,13 @@ Practical learning projects for data engineering, pipelines, and privacy.
 
 [Go to project →](./01-phi-masking) | [Deep guide](./01-phi-masking/MASKING_TECHNIQUES.md)
 
-### 02 - Data Freshness Check
+### 02 - Ingestion and Freshness
 
-**What:** Check a table is fresh before using it, and ingest it on the fly if it isn't  
+**What:** Load data four ways, announce each load, and check freshness before a DAG uses a table  
 **Tech:** Python, DuckDB, YAML, SQL (mapped to BigQuery + Airflow)  
-**Topics:** Freshness checks, idempotent ingestion, shared tables across DAGs, control tables
+**Topics:** Snapshot, incremental, file drop and CDC ingestion, write-audit-publish, watermarks, freshness checks, control tables
 
-[Go to project →](./02-data-freshness-check)
+[Go to project →](./02-ingestion-and-freshness)
 
 ### 03 - E-commerce Real-Time Pipeline
 
@@ -36,7 +36,7 @@ pip install -r requirements.txt
 python scripts/generate_data.py
 python run_pipeline.py
 
-cd ../02-data-freshness-check
+cd ../02-ingestion-and-freshness
 pip install -r requirements.txt
 python run_demo.py
 
@@ -55,12 +55,12 @@ python run_pipeline.py
 ├── README.md                # Project overview
 └── MASKING_TECHNIQUES.md    # Detailed guide
 
-02-data-freshness-check/
-├── config/freshness_rules.yaml   # Per-table freshness check
-├── ingestion/                    # One idempotent SQL per table
-├── common/ensure_fresh.py        # Check → ingest → re-check step
+02-ingestion-and-freshness/
+├── config/tables.yaml            # Per table: ingestion type + freshness check
+├── ingestion/                    # 4 ingestion types, write → audit → publish
+├── freshness/ensure_fresh.py     # Check → ingest → re-check step
 ├── dags/                         # Two DAGs sharing one table
-└── run_demo.py                   # Plays out 5 scenarios
+└── run_demo.py                   # Plays out 7 scenarios
 
 03-ecommerce-realtime-pipeline/
 ├── config/                  # Topology (topics, subscriptions) + event contracts
