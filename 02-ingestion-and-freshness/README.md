@@ -1,6 +1,44 @@
 # Ingestion and Freshness
 
-**A beginner project about the two ends of one handshake:**
+> 🧭 **This is a situation-based project.**
+> It doesn't start from a concept and invent an example for it. It starts from a **situation that really happens in data teams**, and every concept here is something that situation forces you to learn.
+>
+> **When explaining this project to someone, always start with the situation below.**
+
+## The Situation
+
+You work on a small data team at an online shop. Every day, data lands in the warehouse in four different ways:
+- **Orders** are copied from the shop's database, only the rows that changed.
+- **Customers** are copied in full, because the table is small.
+- **Payments** arrive as files that a payment vendor uploads to a shared folder.
+- **Order status changes** (created → paid → shipped) stream in from the database every 30 minutes.
+
+Two pipelines (DAGs), owned by different people, use this data:
+- `sales_report_dag` reads orders + customers to build the daily sales report.
+- `finance_dag` reads orders + payments to check that every order was paid.
+
+Nobody guarantees the data is loaded before these pipelines run. So, sooner or later:
+- Finance runs **before payments arrive**, and paid orders show up as unpaid.
+- A vendor file is read **while it's still being written**, so half the payments are missing.
+- A rerun **loads the same orders twice**, and revenue is double-counted.
+- A load **fails halfway**, and a report is built on a partial table.
+
+**The question this project answers:** *How does a pipeline know that the data it needs is really ready?*
+
+## What This Situation Teaches
+
+| The situation raises… | So you learn… | Where |
+|-----------------------|---------------|-------|
+| Data arrives in four different ways | Four ingestion types: snapshot, incremental, file drop, CDC | [Part 1](#part-1-ingestion-four-types) |
+| A load can fail halfway or bring bad data | Write → Audit → Publish | [Part 1](#one-pattern-for-all-four-write--audit--publish) |
+| Reruns must not double-count | Safe-to-rerun loads, watermarks, load history | [The Rules](#the-rules-that-make-it-safe) |
+| Pipelines need to know the data is ready | Announce, don't trigger: the control log | [The Expert Rule](#the-expert-rule-announce-dont-trigger) |
+| A pipeline must check before using a table | Three freshness checks | [Part 2](#part-2-freshness-three-checks) |
+| How this looks at a real job | The BigQuery + Airflow mapping | [In Real Life](#in-real-life-bigquery--airflow) |
+
+## How This Project Answers It
+
+Two ends of one handshake:
 1. **Ingestion** loads data from a source, and when it's done, **announces** it.
 2. **Freshness checks** read that announcement before a DAG uses a table. If the table is stale, the check runs the ingestion itself.
 
@@ -11,14 +49,6 @@
                             └──► _freshness_log ──► FRESHNESS CHECK ─┘
                                  ("raw_orders is ready")  (ensure_fresh)
 ```
-
-## The Problem
-
-`raw_orders` is used by two DAGs that don't know about each other. In immature pipelines:
-- A DAG runs before the table is loaded and **silently uses yesterday's data**
-- A load fails halfway and a DAG reads a **partial table**
-- A vendor file is read **while it's still being written**
-- A rerun **duplicates rows**
 
 ## The Expert Rule: Announce, Don't Trigger
 
