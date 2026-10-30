@@ -28,6 +28,14 @@ Practical learning projects for data engineering, pipelines, and privacy.
 
 [Go to project →](./03-ecommerce-realtime-pipeline) | [Deep guide](./03-ecommerce-realtime-pipeline/STREAMING_CONCEPTS.md)
 
+### 04 - Fraud Detection Rules
+
+**What:** Flag suspicious bank transactions for analyst review, with the reasons each was flagged  
+**Tech:** Python, pandas, pytest (mapped to BigQuery + Dataflow)  
+**Topics:** Rules engine, per-account baselines, risk scoring, account takeover, precision and recall, label leakage
+
+[Go to project →](./04-fraud-detection)
+
 ## Quick Start
 
 ```bash
@@ -42,6 +50,11 @@ python run_demo.py
 
 cd ../03-ecommerce-realtime-pipeline
 pip install -r requirements.txt
+python run_pipeline.py
+
+cd ../04-fraud-detection
+pip install -r requirements.txt
+python seed.py
 python run_pipeline.py
 ```
 
@@ -70,6 +83,12 @@ python run_pipeline.py
 ├── tests/                   # pytest: broker semantics, contracts, windows, end-to-end
 ├── README.md                # Project overview
 └── STREAMING_CONCEPTS.md    # Detailed guide
+
+04-fraud-detection/
+├── seed.py                  # Synthetic accounts + transactions, injected account takeover
+├── fraud/                   # rules, engine (risk score), evaluation
+├── tests/                   # pytest: one file per rule
+└── run_pipeline.py          # load → score → flag → CSV → precision/recall report
 ```
 
 ## License
