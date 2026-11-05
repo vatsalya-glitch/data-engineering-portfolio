@@ -1,0 +1,107 @@
+# Daily operations: five reports for the day that has just ended.
+# The run starting at 06:00 on 6 Nov covers 5 Nov.
+dag_id: daily_operations
+description: Daily delivery, sales, returns, support and customer experience reports.
+schedule: "0 6 * * *"        # when the run starts
+period: day                  # the completed period the run covers
+timezone: UTC
+start_date: 2026-11-01
+gcp_conn_id: google_cloud_default
+smtp_conn_id: smtp_default
+project: my-gcp-project
+location: US
+export_bucket: my-reports-bucket
+alert_email: [data-team@example.com]   # gets an email when any task fails
+
+sources:
+  # ---- Loaded by THIS pipeline: ingest -> checks.
+  orders:
+    description: One row per order line, partitioned by order_date.
+    ingest:
+      uri: "gs://my-landing-bucket/orders/{{ period_start }}/*.parquet"
+      mode: period             # replace only this day's partition: safe to rerun
+      partition_field: order_date
+    checks:
+      - "SELECT COUNT(*) > 0 FROM raw.orders WHERE order_date = DATE('{{ period_start }}')"
+      - "SELECT COUNT(*) = 0 FROM raw.orders WHERE order_id IS NULL"
+  customers:
+    description: Full copy of the customer table.
+    ingest:
+      uri: "gs://my-landing-bucket/customers/{{ period_start }}/*.parquet"
+      mode: replace            # the file is a full copy: replace the whole table
+    checks:
+      - "SELECT COUNT(*) = COUNT(DISTINCT customer_id) FROM raw.customers"
+  products:
+    description: Full copy of the product catalogue.
+    ingest:
+      uri: "gs://my-landing-bucket/products/{{ period_start }}/products.csv"
+      mode: replace
+    checks:
+      - "SELECT COUNT(*) = 0 FROM raw.products WHERE unit_price < 0"
+  returns:
+    description: Returns registered during the day, partitioned by return_date.
+    ingest:
+      uri: "gs://my-landing-bucket/returns/{{ period_start }}/*.parquet"
+      mode: period
+      partition_field: return_date
+    checks: []
+
+  # ---- Loaded ELSEWHERE (stream / other pipeline): wait_fresh -> checks.
+  shipments:
+    description: Shipment events streamed from the carrier integration.
+    freshness: "SELECT MAX(event_time) >= TIMESTAMP('{{ period_end }}') FROM raw.shipments"
+    freshness_timeout_hours: 4
+    poke_interval_minutes: 10
+    checks:
+      - "SELECT COUNT(*) = 0 FROM raw.shipments WHERE order_id IS NULL"
+  tickets:
+    description: Support tickets, loaded hourly by the support pipeline.
+    freshness: "SELECT MAX(updated_at) >= TIMESTAMP('{{ period_end }}') FROM raw.tickets"
+    freshness_timeout_hours: 2
+    checks:
+      - "SELECT COUNT(*) = 0 FROM raw.tickets WHERE ticket_id IS NULL"
+
+models:
+  # ---- Intermediates (mart.<name>): used by other models, no steps.
+  order_shipments:
+    type: intermediate
+    description: The day's orders with their shipment, one row per order.
+    uses: [orders, shipments]
+    checks:
+      - "SELECT COUNT(*) = 0 FROM mart.order_shipments WHERE order_id IS NULL"
+      - "SELECT COUNT(*) = COUNT(DISTINCT order_id) FROM mart.order_shipments"
+  order_lines:
+    type: intermediate
+    description: The day's order lines with product details.
+    uses: [orders, products]
+    checks:
+      - "SELECT COUNT(*) = 0 FROM mart.order_lines WHERE category IS NULL"
+
+  # ---- Reports (reports.<name>): final, may have steps.
+  delivery_report:
+    type: report
+    uses: [order_shipments, customers]
+    steps: [approval, export, email]
+    email_to: [logistics@example.com]
+    approval_timeout_hours: 8
+  daily_sales_report:
+    type: report
+    uses: [order_lines, customers]
+    checks:
+      - "SELECT COUNT(*) > 0 FROM reports.daily_sales_report"
+    steps: [export, email]
+    email_to: [sales@example.com]
+  returns_report:
+    type: report
+    uses: [returns, order_lines]
+    steps: [export]
+  support_report:
+    type: report
+    uses: [tickets, customers]
+    steps: [email]
+    email_to: [support-leads@example.com]
+  customer_experience_report:
+    type: report
+    uses: [order_shipments, returns, tickets]
+    steps: [export, email]
+    email_to: [cx@example.com]

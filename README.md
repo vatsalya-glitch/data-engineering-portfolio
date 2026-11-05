@@ -28,6 +28,14 @@ Practical learning projects for data engineering, pipelines, and privacy.
 
 [Go to project →](./03-ecommerce-realtime-pipeline) | [Deep guide](./03-ecommerce-realtime-pipeline/STREAMING_CONCEPTS.md)
 
+### 04 - Config-Driven Reporting Pipelines
+
+**What:** One shared framework that turns a YAML config into an Airflow DAG for reports  
+**Tech:** Python, Apache Airflow 3.1, BigQuery, GCS, sqlglot, pytest  
+**Topics:** Config-driven DAGs, dependency graphs and topological sort, config/SQL drift checks, idempotent partition loads, freshness sensors, quality checks, human approval, completed-period scheduling
+
+[Go to project →](./04-config-driven-reporting)
+
 ## Quick Start
 
 ```bash
@@ -43,6 +51,10 @@ python run_demo.py
 cd ../03-ecommerce-realtime-pipeline
 pip install -r requirements.txt
 python run_pipeline.py
+
+cd ../04-config-driven-reporting
+pip install -r requirements.txt   # see its README for Airflow's constraints file
+pytest tests
 ```
 
 ## Structure
@@ -70,6 +82,13 @@ python run_pipeline.py
 ├── tests/                   # pytest: broker semantics, contracts, windows, end-to-end
 ├── README.md                # Project overview
 └── STREAMING_CONCEPTS.md    # Detailed guide
+
+04-config-driven-reporting/
+├── dags/report_framework/   # config, graph, sql_parse, steps, builder
+├── dags/configs/            # One YAML per pipeline (daily_operations, monthly_finance)
+├── dags/sql/<dag_id>/       # One SQL file per model
+├── dags/*_dag.py            # One-line DAG files
+└── tests/                   # Validation rules, graph, drift check, DagBag load, isolation
 ```
 
 ## License
