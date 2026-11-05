@@ -1,0 +1,44 @@
+# One Kafka broker, running in KRaft mode (no ZooKeeper).
+# Every lesson in this project uses this same broker, so it lives at the
+# project root. Start it from this folder with:  docker compose up -d
+
+services:
+  kafka:
+    image: apache/kafka:4.1.0        # official Apache image, pinned version
+    container_name: kafka            # fixed name so `docker exec kafka ...` works
+    ports:
+      - "9092:9092"                  # your laptop's port 9092 -> the broker's port 9092
+    environment:
+      # --- Who am I? ---
+      KAFKA_NODE_ID: 1                              # this server's ID in the cluster
+      KAFKA_PROCESS_ROLES: broker,controller        # it stores data AND manages the cluster
+
+      # --- Which ports do I listen on? ---
+      # PLAINTEXT (9092) = where producers/consumers connect
+      # CONTROLLER (9093) = internal cluster-management traffic
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      # The address the broker tells clients to use when they connect back.
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      # The list of controllers that vote on cluster decisions: just us.
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+
+      # --- Single-broker settings ---
+      # Kafka keeps some internal topics (e.g. where consumer progress is saved).
+      # By default it wants 3 copies of each; with one broker we can only keep 1.
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0     # don't wait 3s when consumers join
+
+      # Make us create topics on purpose (lesson 2) instead of by accident.
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+
+    # Docker runs this command every 10s. If it succeeds, the container is "healthy".
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 15s
