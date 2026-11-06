@@ -380,3 +380,21 @@ def test_dag_file_without_the_magic_words_is_skipped(tmp_path):
     )
     bag = DagBag(dag_folder=str(tmp_path), include_examples=False, safe_mode=True)
     assert bag.dag_ids == []
+
+
+# --------------------------------------------------------------------------- defaults.yaml
+
+def test_dag_settings_come_from_defaults(daily):
+    assert daily.max_active_runs == 1
+    assert daily.get_task("orders.ingest").retries == 1
+    assert daily.get_task("orders.ingest").retry_delay == timedelta(minutes=5)
+    assert daily.get_task("shipments.wait_fresh").retries == 0   # freshness waits never retry
+    assert daily.get_task("delivery_report.approval").retries == 0
+
+
+def test_pipeline_can_override_dag_settings(tmp_path):
+    config = base_config() | {"retries": 3, "retry_delay_minutes": 1, "max_active_runs": 2}
+    dag = build_dag(write_pipeline(tmp_path, config))
+    assert dag.max_active_runs == 2
+    assert dag.get_task("orders.ingest").retries == 3
+    assert dag.get_task("orders.ingest").retry_delay == timedelta(minutes=1)

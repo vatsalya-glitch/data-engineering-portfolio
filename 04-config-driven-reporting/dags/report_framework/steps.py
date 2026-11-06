@@ -20,8 +20,6 @@ if TYPE_CHECKING:  # pragma: no cover
 
     from .config import Model, PipelineConfig
 
-DEFAULT_APPROVAL_TIMEOUT_HOURS = 8.0
-
 
 @dataclass
 class StepContext:
@@ -93,10 +91,6 @@ def validate_options(options: dict[str, Any]) -> list[str]:
         isinstance(email_to, list) and email_to and all(isinstance(e, str) and e for e in email_to)
     ):
         problems.append("email_to must be a non-empty list of email addresses")
-    timeout = options.get("approval_timeout_hours")
-    if timeout is not None and (isinstance(timeout, bool) or not isinstance(timeout, (int, float))
-                                or timeout <= 0):
-        problems.append("approval_timeout_hours must be a positive number")
     return problems
 
 
@@ -111,7 +105,7 @@ def approval(ctx: StepContext) -> list[BaseOperator]:
     """
     from airflow.providers.standard.operators.hitl import ApprovalOperator
 
-    hours = float(ctx.report.options.get("approval_timeout_hours", DEFAULT_APPROVAL_TIMEOUT_HOURS))
+    hours = float(ctx.report.options["approval_timeout_hours"])  # default in defaults.yaml
     task = ApprovalOperator(
         task_id="approval",
         subject=ctx.template(f"Approve {ctx.report.name} for {{{{ period_start }}}}"),

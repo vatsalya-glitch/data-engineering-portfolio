@@ -1,0 +1,30 @@
+# Framework defaults, shared by every pipeline.
+#
+# Change a value here and it reaches every pipeline that doesn't set it.
+# A pipeline config can override any key under `pipeline`, `source` and
+# `report` by setting the same key at the same level of its own YAML.
+
+# Where each kind of table lives. SQL files and checks refer to these datasets.
+datasets:
+  source: raw              # raw.<source>
+  intermediate: mart       # mart.<intermediate>
+  report: reports          # reports.<report>
+
+# Top-level keys of a pipeline config.
+pipeline:
+  timezone: UTC
+  start_date: 2026-01-01
+  gcp_conn_id: google_cloud_default
+  smtp_conn_id: smtp_default
+  retries: 1               # retries per task (freshness waits and approvals never retry)
+  retry_delay_minutes: 5
+  max_active_runs: 1
+
+# Keys of each entry under `sources:`.
+source:
+  freshness_timeout_hours: 4     # a freshness wait fails after this long
+  poke_interval_minutes: 10      # how often a freshness wait checks again
+
+# Keys of each entry under `models:` with type: report.
+report:
+  approval_timeout_hours: 8      # no answer by then = rejected: remaining steps are skipped

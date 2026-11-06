@@ -79,19 +79,36 @@ from report_framework import build_dag
 dag = build_dag("configs/daily_operations.yaml")
 ```
 
+### Framework defaults
+
+Everything that isn't specific to one pipeline is in YAML too: [`dags/report_framework/defaults.yaml`](./dags/report_framework/defaults.yaml) holds the dataset names, connection ids, retries, start date, freshness timeout and approval timeout. Change a value there and it reaches every pipeline that doesn't set it. A pipeline overrides a default by setting the same key at the same level: top level, under a source, or under a report.
+
+```yaml
+datasets: {source: raw, intermediate: mart, report: reports}
+pipeline: {timezone: UTC, start_date: 2026-01-01, gcp_conn_id: google_cloud_default,
+           smtp_conn_id: smtp_default, retries: 1, retry_delay_minutes: 5, max_active_runs: 1}
+source:   {freshness_timeout_hours: 4, poke_interval_minutes: 10}
+report:   {approval_timeout_hours: 8}
+```
+
+The defaults file is validated like a pipeline config, listing every problem at once. It is shared, so a mistake in it stops every pipeline from loading, the same as a bug in the framework code.
+
 ### Config reference
 
 | Key | Where | Required | Meaning |
 |---|---|---|---|
 | `dag_id`, `schedule`, `period`, `project`, `alert_email` | pipeline | yes | `period` is `day` or `month` |
-| `timezone`, `start_date`, `gcp_conn_id`, `smtp_conn_id`, `location`, `description` | pipeline | no | defaults: `UTC`, `2026-01-01`, `google_cloud_default`, `smtp_default` |
+| `timezone`, `start_date`, `gcp_conn_id`, `smtp_conn_id`, `retries`, `retry_delay_minutes`, `max_active_runs` | pipeline | no | defaults in `defaults.yaml` |
+| `location`, `description` | pipeline | no | |
 | `export_bucket` | pipeline | if any report uses `export` | |
 | `ingest.uri`, `ingest.mode` | source | one of `ingest` / `freshness` | `uri` starts with `gs://`; `mode` is `replace` or `period` |
 | `ingest.format`, `ingest.partition_field` | source | no | format is guessed from the URI extension |
-| `freshness`, `freshness_timeout_hours`, `poke_interval_minutes` | source | one of `ingest` / `freshness` | defaults: 4 hours, 10 minutes |
+| `freshness` | source | one of `ingest` / `freshness` | SQL that returns true once the data covers the period |
+| `freshness_timeout_hours`, `poke_interval_minutes` | source | no | defaults in `defaults.yaml` (4 hours, 10 minutes) |
 | `type`, `uses` | model | yes | `type` is `intermediate` or `report` |
 | `checks` | source, model | no | SQL that must return true |
-| `steps`, `email_to`, `approval_timeout_hours` | report | no | approval timeout defaults to 8 hours |
+| `steps`, `email_to` | report | no | `email_to` is required by the `email` step |
+| `approval_timeout_hours` | report | no | default in `defaults.yaml` (8 hours) |
 
 Template variables available in every SQL file, check, freshness query and URI:
 
@@ -141,6 +158,7 @@ def notify_dashboard(ctx: StepContext) -> list[BaseOperator]:
 ```
 dags/
   report_framework/
+    defaults.yaml   # framework defaults shared by every pipeline
     config.py       # load YAML, attach SQL, validate everything (no Airflow import)
     graph.py        # topological order, cycles, usage counts (no Airflow import)
     sql_parse.py    # tables a SQL query reads (no Airflow import)
@@ -152,7 +170,9 @@ dags/
   monthly_finance_dag.py
   .airflowignore    # keeps Airflow from parsing the framework package as DAG files
 tests/
+  fixtures/         # a small valid pipeline (YAML + SQL) that tests break one rule at a time
   test_config.py    # every validation rule, periods
+  test_defaults.py  # defaults.yaml: values, overrides, validation
   test_graph.py     # order, cycle messages, usage counts
   test_sql_parse.py # drift-check parsing: CTEs, CREATE ... AS, Jinja
   test_dag_load.py  # DagBag load, task dependencies, periods, alerts, isolation

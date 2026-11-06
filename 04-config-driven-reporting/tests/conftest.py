@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import copy
 import sys
 from pathlib import Path
 
@@ -15,62 +14,19 @@ sys.path.insert(0, str(DAGS_DIR))
 
 from report_framework.config import ConfigError, load_config  # noqa: E402
 
-BASE_CONFIG = {
-    "dag_id": "test_pipeline",
-    "schedule": "0 6 * * *",
-    "period": "day",
-    "project": "my-project",
-    "export_bucket": "my-bucket",
-    "alert_email": ["data-team@example.com"],
-    "sources": {
-        "orders": {
-            "ingest": {"uri": "gs://landing/orders/{{ period_start }}/*.parquet", "mode": "period"},
-            "checks": ["SELECT COUNT(*) = 0 FROM raw.orders WHERE order_id IS NULL"],
-        },
-        "customers": {
-            "ingest": {"uri": "gs://landing/customers/{{ period_start }}/*.parquet", "mode": "replace"},
-        },
-        "shipments": {
-            "freshness": "SELECT MAX(event_time) >= TIMESTAMP('{{ period_end }}') FROM raw.shipments",
-            "checks": ["SELECT COUNT(*) = 0 FROM raw.shipments WHERE order_id IS NULL"],
-        },
-    },
-    "models": {
-        "order_shipments": {
-            "type": "intermediate",
-            "uses": ["orders", "shipments"],
-            "checks": ["SELECT COUNT(*) = 0 FROM mart.order_shipments WHERE order_id IS NULL"],
-        },
-        "delivery_report": {
-            "type": "report",
-            "uses": ["order_shipments", "customers"],
-            "steps": ["approval", "export", "email"],
-            "email_to": ["logistics@example.com"],
-        },
-    },
-}
-
-BASE_SQL = {
-    "order_shipments": (
-        "CREATE OR REPLACE TABLE mart.order_shipments AS\n"
-        "SELECT o.order_id, s.carrier FROM raw.orders AS o\n"
-        "JOIN raw.shipments AS s USING (order_id)\n"
-        "WHERE o.order_date = DATE('{{ period_start }}')"
-    ),
-    "delivery_report": (
-        "CREATE OR REPLACE TABLE reports.delivery_report AS\n"
-        "SELECT c.region, COUNT(*) AS orders FROM mart.order_shipments AS os\n"
-        "JOIN raw.customers AS c USING (customer_id) GROUP BY c.region"
-    ),
-}
+FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
+BASE_CONFIG_PATH = FIXTURES_DIR / "test_pipeline.yaml"
+BASE_SQL_DIR = FIXTURES_DIR / "sql" / "test_pipeline"
 
 
 def base_config() -> dict:
-    return copy.deepcopy(BASE_CONFIG)
+    """A fresh copy of fixtures/test_pipeline.yaml, as a dict tests can change."""
+    return yaml.safe_load(BASE_CONFIG_PATH.read_text())
 
 
-def base_sql() -> dict:
-    return dict(BASE_SQL)
+def base_sql() -> dict[str, str]:
+    """model name -> SQL, from fixtures/sql/test_pipeline/."""
+    return {path.stem: path.read_text() for path in sorted(BASE_SQL_DIR.glob("*.sql"))}
 
 
 def write_pipeline(root: Path, config: dict | str, sql: dict[str, str] | None = None) -> Path:

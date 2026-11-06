@@ -2,14 +2,20 @@
 
 `load_config(path)` returns a `PipelineConfig` or raises `ConfigError`
 listing every problem found, not only the first one (UC12).
+
+Framework defaults (dataset names, timeouts, retries, connection ids) live
+in `defaults.yaml` next to this file. A pipeline config overrides them by
+setting the same key.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import functools
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import yaml
 
@@ -22,19 +28,23 @@ MODEL_TYPES = ("intermediate", "report")
 INGEST_MODES = ("replace", "period")
 INGEST_FORMATS = ("PARQUET", "CSV", "NEWLINE_DELIMITED_JSON", "AVRO", "ORC")
 
-DEFAULT_FRESHNESS_TIMEOUT_HOURS = 4.0
-DEFAULT_POKE_INTERVAL_MINUTES = 10.0
+DEFAULTS_PATH = Path(__file__).with_name("defaults.yaml")
 
-SOURCE_DATASET = "raw"
-DATASETS = {"intermediate": "mart", "report": "reports"}
+# The settings defaults.yaml must define, per section. A pipeline config can
+# override each one at the same level (top level, a source, or a report).
+DEFAULT_KEYS = {
+    "datasets": ("source", "intermediate", "report"),
+    "pipeline": ("timezone", "start_date", "gcp_conn_id", "smtp_conn_id",
+                 "retries", "retry_delay_minutes", "max_active_runs"),
+    "source": ("freshness_timeout_hours", "poke_interval_minutes"),
+    "report": ("approval_timeout_hours",),
+}
 
 _PIPELINE_KEYS = {
-    "dag_id", "description", "schedule", "period", "timezone", "start_date",
-    "gcp_conn_id", "smtp_conn_id", "project", "location", "alert_email",
-    "sources", "models",
+    "dag_id", "description", "schedule", "period", "project", "location", "alert_email",
+    "sources", "models", *DEFAULT_KEYS["pipeline"],
 }
-_SOURCE_KEYS = {"description", "ingest", "freshness", "checks",
-                "freshness_timeout_hours", "poke_interval_minutes"}
+_SOURCE_KEYS = {"description", "ingest", "freshness", "checks", *DEFAULT_KEYS["source"]}
 _INGEST_KEYS = {"uri", "mode", "format", "partition_field"}
 _MODEL_KEYS = {"description", "type", "uses", "checks", "steps"}
 
@@ -50,6 +60,103 @@ class ConfigError(ValueError):
         super().__init__(f"{self.path}: {len(problems)} {noun}\n{lines}")
 
 
+# --------------------------------------------------------------------------- settings
+
+def _is_text(value: Any) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
+def _is_identifier(value: Any) -> bool:
+    return isinstance(value, str) and value.isidentifier()
+
+
+def _is_timezone(value: Any) -> bool:
+    if not _is_text(value):
+        return False
+    try:
+        ZoneInfo(value)
+    except (ZoneInfoNotFoundError, ValueError):
+        return False
+    return True
+
+
+def _is_positive_number(value: Any) -> bool:
+    return not isinstance(value, bool) and isinstance(value, (int, float)) and value > 0
+
+
+def _is_int(minimum: int):
+    return lambda value: not isinstance(value, bool) and isinstance(value, int) and value >= minimum
+
+
+# setting -> (check, what the value must be)
+SETTING_RULES = {
+    "source": (_is_identifier, "a dataset name (letters, digits, _)"),
+    "intermediate": (_is_identifier, "a dataset name (letters, digits, _)"),
+    "report": (_is_identifier, "a dataset name (letters, digits, _)"),
+    "timezone": (_is_timezone, "an IANA time zone such as UTC or Europe/Amsterdam"),
+    "start_date": (lambda v: isinstance(v, date), "a date (YYYY-MM-DD)"),
+    "gcp_conn_id": (_is_text, "a non-empty string"),
+    "smtp_conn_id": (_is_text, "a non-empty string"),
+    "retries": (_is_int(0), "a whole number, 0 or more"),
+    "retry_delay_minutes": (_is_positive_number, "a positive number"),
+    "max_active_runs": (_is_int(1), "a whole number, 1 or more"),
+    "freshness_timeout_hours": (_is_positive_number, "a positive number"),
+    "poke_interval_minutes": (_is_positive_number, "a positive number"),
+    "approval_timeout_hours": (_is_positive_number, "a positive number"),
+}
+
+
+def check_setting(where: str, key: str, value: Any) -> str | None:
+    """A problem message if `value` is not valid for setting `key`, else None."""
+    check, expected = SETTING_RULES[key]
+    if check(value):
+        return None
+    return f"{where} must be {expected}, got {value!r}"
+
+
+@dataclass(frozen=True)
+class Defaults:
+    """Framework defaults from defaults.yaml."""
+
+    datasets: dict[str, str]
+    pipeline: dict[str, Any]
+    source: dict[str, Any]
+    report: dict[str, Any]
+
+
+@functools.lru_cache(maxsize=None)
+def load_defaults(path: str | Path = DEFAULTS_PATH) -> Defaults:
+    """Load and validate defaults.yaml. Raises ConfigError listing every problem."""
+    path = Path(path)
+    try:
+        raw, problems = _read_yaml(path)
+    except (OSError, yaml.YAMLError) as error:
+        raise ConfigError(path, [f"cannot read framework defaults: {error}"]) from None
+    if not isinstance(raw, dict):
+        raise ConfigError(path, problems + ["framework defaults must be a YAML mapping"])
+    for section in sorted(set(raw) - set(DEFAULT_KEYS), key=str):
+        problems.append(f"unknown section {section!r}")
+    sections: dict[str, dict[str, Any]] = {}
+    for section, keys in DEFAULT_KEYS.items():
+        values = raw.get(section)
+        if not isinstance(values, dict):
+            problems.append(f"section {section!r} is required and must be a mapping")
+            values = {}
+        for key in sorted(set(values) - set(keys), key=str):
+            problems.append(f"{section}: unknown key {key!r}")
+        for key in keys:
+            if key not in values:
+                problems.append(f"{section}.{key} is required")
+            elif problem := check_setting(f"{section}.{key}", key, values[key]):
+                problems.append(problem)
+        sections[section] = {k: values[k] for k in keys if k in values}
+    if problems:
+        raise ConfigError(path, problems)
+    return Defaults(**sections)
+
+
+# --------------------------------------------------------------------------- config objects
+
 @dataclass
 class Ingest:
     uri: str
@@ -61,16 +168,17 @@ class Ingest:
 @dataclass
 class Source:
     name: str
+    dataset: str
+    freshness_timeout_hours: float
+    poke_interval_minutes: float
     ingest: Ingest | None = None
     freshness: str | None = None
     checks: list[str] = field(default_factory=list)
-    freshness_timeout_hours: float = DEFAULT_FRESHNESS_TIMEOUT_HOURS
-    poke_interval_minutes: float = DEFAULT_POKE_INTERVAL_MINUTES
     description: str = ""
 
     @property
     def table(self) -> str:
-        return f"{SOURCE_DATASET}.{self.name}"
+        return f"{self.dataset}.{self.name}"
 
 
 @dataclass
@@ -78,6 +186,7 @@ class Model:
     name: str
     type: str                      # intermediate | report
     uses: list[str]
+    dataset: str
     sql: str = ""
     checks: list[str] = field(default_factory=list)
     steps: list[str] = field(default_factory=list)
@@ -86,7 +195,7 @@ class Model:
 
     @property
     def table(self) -> str:
-        return f"{DATASETS.get(self.type, 'mart')}.{self.name}"
+        return f"{self.dataset}.{self.name}"
 
 
 @dataclass
@@ -99,6 +208,9 @@ class PipelineConfig:
     start_date: date
     gcp_conn_id: str
     smtp_conn_id: str
+    retries: int
+    retry_delay_minutes: float
+    max_active_runs: int
     project: str
     location: str | None
     alert_email: list[str]
@@ -185,9 +297,14 @@ def default_sql_dir(config_path: Path, dag_id: str) -> Path:
     return config_path.resolve().parent.parent / "sql" / dag_id
 
 
-def load_config(path: str | Path, sql_dir: str | Path | None = None) -> PipelineConfig:
+def load_config(
+    path: str | Path,
+    sql_dir: str | Path | None = None,
+    defaults_path: str | Path = DEFAULTS_PATH,
+) -> PipelineConfig:
     """Load and validate one pipeline config. Raises ConfigError listing every problem."""
     path = Path(path)
+    defaults = load_defaults(Path(defaults_path))
     problems: list[str] = []
     try:
         raw, duplicates = _read_yaml(path)
@@ -197,7 +314,7 @@ def load_config(path: str | Path, sql_dir: str | Path | None = None) -> Pipeline
     if not isinstance(raw, dict):
         raise ConfigError(path, problems + ["config must be a YAML mapping"])
 
-    validator = _Validator(path, raw, problems, Path(sql_dir) if sql_dir else None)
+    validator = _Validator(path, raw, problems, Path(sql_dir) if sql_dir else None, defaults)
     config = validator.run()
     if problems:
         raise ConfigError(path, problems)
@@ -205,8 +322,10 @@ def load_config(path: str | Path, sql_dir: str | Path | None = None) -> Pipeline
 
 
 class _Validator:
-    def __init__(self, path: Path, raw: dict, problems: list[str], sql_dir: Path | None):
+    def __init__(self, path: Path, raw: dict, problems: list[str], sql_dir: Path | None,
+                 defaults: Defaults):
         self.path = path
+        self.defaults = defaults
         self.raw = raw
         self.problems = problems
         self.sql_dir = sql_dir
@@ -240,13 +359,17 @@ class _Validator:
             return []
         return value
 
-    def _number(self, where: str, value: Any, default: float) -> float:
-        if value is None:
-            return default
-        if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
-            self.error(f"{where} must be a positive number")
-            return default
-        return float(value)
+    def _settings(self, where: str, data: dict, defaults: dict[str, Any]) -> dict[str, Any]:
+        """The defaults, overridden by whatever `data` sets. Invalid overrides are reported."""
+        values = dict(defaults)
+        for key in defaults:
+            if key in data:
+                prefix = f"{where}.{key}" if where else key
+                if problem := check_setting(prefix, key, data[key]):
+                    self.error(problem)
+                else:
+                    values[key] = data[key]
+        return values
 
     def _mapping(self, where: str, value: Any) -> dict:
         if value is None:
@@ -273,10 +396,7 @@ class _Validator:
         alert_email = self._str_list("alert_email", raw.get("alert_email"))
         if not alert_email:
             self.error("alert_email is required: list who gets an email when a task fails")
-        start_date = raw.get("start_date", date(2026, 1, 1))
-        if not isinstance(start_date, date):
-            self.error(f"start_date must be a date (YYYY-MM-DD), got {start_date!r}")
-            start_date = date(2026, 1, 1)
+        settings = self._settings("", raw, self.defaults.pipeline)
 
         sources = self._sources(self._mapping("sources", raw.get("sources")))
         models = self._models(self._mapping("models", raw.get("models")))
@@ -287,12 +407,13 @@ class _Validator:
             description=raw.get("description") or "",
             schedule=schedule,
             period=period if period in PERIODS else "day",
-            timezone=self._str("timezone", raw.get("timezone"), required=False) or "UTC",
-            start_date=start_date,
-            gcp_conn_id=self._str("gcp_conn_id", raw.get("gcp_conn_id"), required=False)
-            or "google_cloud_default",
-            smtp_conn_id=self._str("smtp_conn_id", raw.get("smtp_conn_id"), required=False)
-            or "smtp_default",
+            timezone=settings["timezone"],
+            start_date=settings["start_date"],
+            gcp_conn_id=settings["gcp_conn_id"],
+            smtp_conn_id=settings["smtp_conn_id"],
+            retries=settings["retries"],
+            retry_delay_minutes=float(settings["retry_delay_minutes"]),
+            max_active_runs=settings["max_active_runs"],
             project=self._str("project", raw.get("project")) or "",
             location=self._str("location", raw.get("location"), required=False),
             alert_email=alert_email,
@@ -326,17 +447,15 @@ class _Validator:
                 )
             ingest = self._ingest(where, data["ingest"]) if has_ingest else None
             freshness = self._str(f"{where}.freshness", data["freshness"]) if has_freshness else None
+            settings = self._settings(where, data, self.defaults.source)
             sources[name] = Source(
                 name=name,
+                dataset=self.defaults.datasets["source"],
                 ingest=ingest,
                 freshness=freshness,
                 checks=self._str_list(f"{where}.checks", data.get("checks")),
-                freshness_timeout_hours=self._number(
-                    f"{where}.freshness_timeout_hours", data.get("freshness_timeout_hours"),
-                    DEFAULT_FRESHNESS_TIMEOUT_HOURS),
-                poke_interval_minutes=self._number(
-                    f"{where}.poke_interval_minutes", data.get("poke_interval_minutes"),
-                    DEFAULT_POKE_INTERVAL_MINUTES),
+                freshness_timeout_hours=float(settings["freshness_timeout_hours"]),
+                poke_interval_minutes=float(settings["poke_interval_minutes"]),
                 description=data.get("description") or "",
             )
         return sources
@@ -384,13 +503,17 @@ class _Validator:
             uses = self._str_list(f"{where}.uses", data.get("uses"))
             for duplicate in sorted({u for u in uses if uses.count(u) > 1}):
                 self.error(f"{where}: uses {duplicate!r} more than once")
+            options = {k: data[k] for k in step_keys - set(self.defaults.report) if k in data}
+            if model_type == "report":
+                options |= self._settings(where, data, self.defaults.report)
             models[name] = Model(
                 name=name,
                 type=model_type if model_type in MODEL_TYPES else "",
                 uses=list(dict.fromkeys(uses)),
+                dataset=self.defaults.datasets[model_type if model_type in MODEL_TYPES else "intermediate"],
                 checks=self._str_list(f"{where}.checks", data.get("checks")),
                 steps=self._str_list(f"{where}.steps", data.get("steps")),
-                options={k: data[k] for k in step_keys if k in data},
+                options=options,
                 description=data.get("description") or "",
             )
         return models

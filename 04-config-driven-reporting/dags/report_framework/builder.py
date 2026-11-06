@@ -33,8 +33,6 @@ from airflow.timetables.interval import CronDataIntervalTimetable
 from . import graph as graph_lib
 from . import steps as steps_lib
 from .config import (
-    DATASETS,
-    SOURCE_DATASET,
     Model,
     PipelineConfig,
     Source,
@@ -202,7 +200,7 @@ class DagBuilder:
             load["autodetect"] = True
         load["destinationTable"] = {
             "projectId": self.config.project,
-            "datasetId": SOURCE_DATASET,
+            "datasetId": source.dataset,
             "tableId": table_id,
         }
         return BigQueryInsertJobOperator(
@@ -277,12 +275,12 @@ class DagBuilder:
             schedule=CronDataIntervalTimetable(config.schedule, timezone=tz),
             start_date=pendulum.datetime(start.year, start.month, start.day, tz=tz),
             catchup=False,  # backfills are out of scope
-            max_active_runs=1,
+            max_active_runs=config.max_active_runs,
             user_defined_macros={"report_period": make_period_macro(config.period, config.timezone)},
             default_args={
                 "owner": "report-framework",
-                "retries": 1,
-                "retry_delay": timedelta(minutes=5),
+                "retries": config.retries,
+                "retry_delay": timedelta(minutes=config.retry_delay_minutes),
                 "on_failure_callback": failure_alert(config),
             },
             tags=["report-framework", f"period:{config.period}"],
@@ -311,5 +309,5 @@ class DagBuilder:
         for report in config.reports:
             uses = ", ".join(sorted(graph_lib.upstream(self.graph, report)))
             steps = " → ".join(config.models[report].steps) or "-"
-            lines.append(f"| `{DATASETS['report']}.{report}` | {uses} | {steps} |")
+            lines.append(f"| `{config.models[report].table}` | {uses} | {steps} |")
         return "\n".join(lines)
