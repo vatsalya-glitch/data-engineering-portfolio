@@ -18,7 +18,7 @@ Many reports share the same raw and shared tables. Each should be built **once**
 
 ## The Idea
 
-Each report lists the tables it reads. That turns the config into a graph, and a topological sort of the graph gives the order of the DAG's tasks.
+The config *is* the graph. Each table lists the tables it is built from, which is how graph theory writes a DAG down: an adjacency list. A topological sort of it gives the order of the DAG's tasks.
 
 ```
  layer            table                           built from
@@ -33,7 +33,7 @@ Each report lists the tables it reads. That turns the config into a graph, and a
                   invoice_reconciliation_report   net_revenue + invoices
 ```
 
-- **Edges come from the config.** A task runs after the tables listed under it in the config: a report after its transformations and ingestion tables, a transformation after the tables nested under it.
+- **Edges come from the config.** A task runs after the tables in its list.
 - **Shared tables run once.** Each table is one task, however many reports use it.
 - **Most-shared first.** Each task's `priority_weight` is the number of reports that need it, directly or through other tables. When several tasks are ready, the one more reports wait on runs first.
 
@@ -51,60 +51,44 @@ tests/             graph tests (no Airflow needed)
 
 ## The Config
 
-`config.yaml` has one key, `reports:`. Each report is described from the top down: the report, then the transformations it reads, then inside each transformation the ingestion tables it is built from.
-
 ```yaml
+transformation:
+
+  order_revenue:
+    - orders
+    - order_items
+
+  net_revenue:
+    - order_revenue
+    - refunds
+
 reports:
 
   revenue_report:
-    transformation:
-      net_revenue:
-        ingestion:
-          - refunds
-        transformation:
-          order_revenue:
-            ingestion:
-              - orders
-              - order_items
+    - net_revenue
 
   refunds_report:
-    ingestion:
-      - refunds
-    transformation:
-      order_revenue:
-        ingestion:
-          - orders
-          - order_items
+    - order_revenue
+    - refunds
 
   shipping_cost_report:
-    ingestion:
-      - shipping
-    transformation:
-      order_revenue:
-        ingestion:
-          - orders
-          - order_items
+    - order_revenue
+    - shipping
 
   invoice_reconciliation_report:
-    ingestion:
-      - invoices
-    transformation:
-      net_revenue:
-        ingestion:
-          - refunds
-        transformation:
-          order_revenue:
-            ingestion:
-              - orders
-              - order_items
+    - net_revenue
+    - invoices
 ```
 
 How to read it:
 
-- **`ingestion:`** lists the raw tables read directly at that level: by the report, or by the transformation it sits under.
-- **`transformation:`** lists the shared tables read at that level. Under each one, its own `ingestion:` and `transformation:` say what it is built from. A transformation built from another transformation nests it, as `net_revenue` does with `order_revenue`.
+- **Each table lists the tables it is built from**, one per line. That list is the arrows into its task.
+- **The section says the layer:** names under `transformation:` are shared tables, names under `reports:` are reports.
+- **Any other name is a raw table** copied from the shop database. Raw tables are built from nothing, so they need no entry: `orders` exists because `order_revenue` lists it.
+- **Each table is written once**, however many reports use it. `order_revenue` is listed by three tables and runs once, first.
 - **Each name has a script** at `<layer>/<name>.sql`.
-- **A shared table is written under every report that needs it, but runs once.** `order_revenue` appears under all four reports and is one task. `graph.py` checks that it is described the same way everywhere, and stops with an error naming both places if not.
+
+Why this format: a DAG is a graph where tables can be shared, and the standard way to store one is an adjacency list, each node once with its incoming edges. Here the config is that list, so `graph.py` only adds the layer to each name. Nested formats (report → transformation → ingestion) are trees: every shared table has to be repeated under each report, and the code has to merge the copies back into one graph.
 
 `config.yaml` holds only the reports and their steps. The DAG's own settings are constants at the top of `main.py`:
 
@@ -117,7 +101,7 @@ LOCATION = "US"                              # BigQuery location of the datasets
 PARAMS = {"source_connection": "my-gcp-project.us.shop_db"}   # used in SQL as {{ params.<name> }}
 ```
 
-**Adding a report** means writing `reports/<name>.sql` and adding its block under `reports:`, with the transformations and ingestion tables it needs. Nothing else changes.
+**Adding a report** means writing `reports/<name>.sql` and adding it under `reports:` with the tables it reads. A new raw table or transformation is added the same way: write its script and list it. Nothing else changes.
 
 ## The Flow
 
@@ -129,7 +113,7 @@ config.yaml ──► load_config() ──► build_graph() ──► reports_us
 ```
 
 1. `load_config()` reads `config.yaml`.
-2. `build_graph()` walks each report from the top down and turns the config into `node -> nodes it needs`, with nodes named `<layer>.<name>`. It refuses to load the DAG, listing every mistake, if a script is missing, a table uses nothing, or a shared table is described differently in two places.
+2. `build_graph()` adds the layer to every name in the config, giving `node -> nodes it needs` with nodes named `<layer>.<name>`. It refuses to load the DAG, listing every mistake, if a script is missing, a table lists nothing, a report is used by another table, a name is in both sections, or there is a cycle.
 3. `reports_using()` counts, for each node, how many reports need it.
 4. `build_order()` sorts the graph topologically. Among nodes ready at the same time, the most-used comes first.
 5. `main.py` creates one `BigQueryInsertJobOperator` per node, with that count as its `priority_weight`, and adds an arrow for every dependency.
@@ -154,15 +138,11 @@ graph["transformation.net_revenue"]   = {"ingestion.refunds", "transformation.or
 graph["reports.revenue_report"]       = {"transformation.net_revenue"}
 ```
 
-It walks each report from the top down, with one small function, `read_needs()`, used at every level:
+The config is already this dictionary, minus the layer prefixes, so `build_graph` only:
 
-1. Each name under `ingestion:` becomes a node that needs nothing.
-2. Each name under `transformation:` becomes a node. `read_needs()` is called again on what is nested under it, so it needs the tables found there, however deep.
-3. The report becomes a node that needs what is listed directly under it.
-4. When a table is met again under another report, it must need the same tables as the first time. Otherwise that is an error naming both places.
-5. Every node must have its script at `<layer>/<name>.sql`.
-
-No separate cycle check is needed. Nesting can only say "`a` needs `b`, `b` needs `a`" by describing a table two different ways, and step 4 reports that.
+1. Turns each transformation and report into a node that needs the tables in its list. A name gets the layer of the section it is defined in; a name defined in no section is a raw table, `ingestion.<name>`.
+2. Adds every raw table as a node that needs nothing.
+3. Checks the rules: a report can't be used by another table, a name can't be in both sections, every node has its script at `<layer>/<name>.sql`, and there is no cycle (`a` needs `b`, `b` needs `a`), which Python's `graphlib.TopologicalSorter` detects.
 
 All mistakes are collected and raised together, so they can be fixed in one go.
 

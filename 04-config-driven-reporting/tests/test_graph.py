@@ -52,15 +52,17 @@ def test_most_shared_tables_go_first():
 
 def test_shared_table_is_one_node():
     graph = build_graph(load_config())
-    # order_revenue is written under all four reports, but it is one node.
+    # order_revenue is used by all four reports, and is one node.
     assert sum(node == "transformation.order_revenue" for node in graph) == 1
     assert reports_using(graph)["transformation.order_revenue"] == 4
 
 
-def test_nested_transformation_needs_its_inner_transformation():
+def test_names_not_in_a_section_are_raw_tables():
     graph = build_graph(load_config())
-    assert graph["transformation.net_revenue"] == {"ingestion.refunds", "transformation.order_revenue"}
-    assert graph["reports.refunds_report"] == {"ingestion.refunds", "transformation.order_revenue"}
+    raw = {node for node in graph if node.startswith("ingestion.")}
+    assert raw == {f"ingestion.{name}" for name in
+                   ["orders", "order_items", "invoices", "refunds", "shipping"]}
+    assert all(graph[node] == set() for node in raw)
 
 
 # --------------------------------------------------------------------------- mistakes in the config
@@ -82,42 +84,26 @@ def problems(config, tmp_path, *scripts):
 
 
 def test_missing_script(tmp_path):
-    config = {"reports": {"r": {"ingestion": ["orders"]}}}
+    config = {"reports": {"r": ["orders"]}}
     assert "ingestion.orders has no script ingestion/orders.sql" in problems(config, tmp_path, "reports.r")
 
 
-def test_report_using_nothing(tmp_path):
-    config = {"reports": {"r": {}}}
-    assert "reports.r uses no tables" in problems(config, tmp_path, "reports.r")
+def test_table_listing_nothing(tmp_path):
+    config = {"reports": {"r": []}}
+    assert "reports.r lists no tables" in problems(config, tmp_path, "reports.r")
 
 
-def test_transformation_using_nothing(tmp_path):
-    config = {"reports": {"r": {"transformation": {"t": {}}}}}
-    assert "reports.r.transformation.t uses no tables" in problems(
-        config, tmp_path, "reports.r", "transformation.t")
+def test_report_used_by_another_table(tmp_path):
+    config = {"reports": {"r1": ["orders"], "r2": ["r1"]}}
+    assert "r1 is a report" in problems(config, tmp_path, "reports.r1", "reports.r2", "ingestion.orders")
 
 
-def test_shared_table_described_differently(tmp_path):
-    config = {"reports": {
-        "r1": {"transformation": {"t": {"ingestion": ["orders"]}}},
-        "r2": {"transformation": {"t": {"ingestion": ["orders", "refunds"]}}},
-    }}
-    message = problems(config, tmp_path, "reports.r1", "reports.r2", "transformation.t",
-                       "ingestion.orders", "ingestion.refunds")
-    assert "transformation.t is described differently in reports.r1.transformation.t" in message
-    assert "reports.r2.transformation.t" in message
+def test_name_in_two_sections(tmp_path):
+    config = {"transformation": {"t": ["orders"]}, "reports": {"t": ["orders"]}}
+    assert "t is both a transformation and a report" in problems(
+        config, tmp_path, "transformation.t", "reports.t", "ingestion.orders")
 
 
-def test_unknown_key(tmp_path):
-    config = {"reports": {"r": {"ingestion": ["orders"], "steps": ["email"]}}}
-    assert "reports.r has an unknown key 'steps'" in problems(
-        config, tmp_path, "reports.r", "ingestion.orders")
-
-
-def test_ingestion_must_be_a_list(tmp_path):
-    config = {"reports": {"r": {"ingestion": "orders"}}}
-    assert "reports.r.ingestion must be a list" in problems(config, tmp_path, "reports.r")
-
-
-def test_no_reports(tmp_path):
-    assert "needs a 'reports:' key" in problems({"ingestion": ["orders"]}, tmp_path)
+def test_cycle(tmp_path):
+    config = {"transformation": {"a": ["b"], "b": ["a"]}, "reports": {"r": ["a"]}}
+    assert "cycle" in problems(config, tmp_path, "transformation.a", "transformation.b", "reports.r")

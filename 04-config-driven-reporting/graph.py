@@ -1,12 +1,8 @@
 """Read config.yaml and work out which task runs after which.
 
-config.yaml describes each report from the top down: the report, the
-transformations it reads, and inside each transformation the ingestion
-tables (and other transformations) it is built from.
-
-Every table becomes a node of a graph, named "<layer>.<name>", for example
-"ingestion.orders" or "reports.revenue_report". The graph is a plain
-dictionary:
+config.yaml is already a graph, written as an adjacency list: each table
+lists the tables it is built from. This file adds the layer to every name,
+so each node is named "<layer>.<name>" and matches its script:
 
     graph[node] = the set of nodes it needs first
 
@@ -14,10 +10,8 @@ For the finance config this gives, for example:
 
     graph["ingestion.orders"]             = set()        # raw tables need nothing
     graph["transformation.order_revenue"] = {"ingestion.orders", "ingestion.order_items"}
-    graph["transformation.net_revenue"]   = {"ingestion.refunds", "transformation.order_revenue"}
+    graph["transformation.net_revenue"]   = {"transformation.order_revenue", "ingestion.refunds"}
     graph["reports.revenue_report"]       = {"transformation.net_revenue"}
-
-A table written under several reports is still one node, so it runs once.
 
 From the graph we work out:
 - the build order (topological: a node always comes after what it needs), and
@@ -28,7 +22,7 @@ Run `python graph.py` to print the build order.
 
 from __future__ import annotations
 
-from graphlib import TopologicalSorter
+from graphlib import CycleError, TopologicalSorter
 from pathlib import Path
 
 import yaml
@@ -50,86 +44,47 @@ def build_graph(config: dict, scripts_dir: Path = HERE) -> dict[str, set[str]]:
     Checks the config on the way. If anything is wrong, raises ValueError
     listing every problem at once, so they can all be fixed in one go.
     """
-    graph: dict[str, set[str]] = {}
-    first_seen: dict[str, str] = {}   # node -> where in the config it was first described
+    transformations = config.get("transformation") or {}
+    reports = config.get("reports") or {}
     errors: list[str] = []
 
-    def add(node: str, needs: set[str], where: str) -> None:
-        """Add a node. A node met again (a shared table) must need the same tables."""
-        if node not in graph:
-            graph[node] = needs
-            first_seen[node] = where
-        elif graph[node] != needs:
-            errors.append(
-                f"{node} is described differently in {first_seen[node]} "
-                f"({', '.join(sorted(graph[node])) or 'nothing'}) and in {where} "
-                f"({', '.join(sorted(needs)) or 'nothing'})"
-            )
+    def node(name: str) -> str:
+        """A name as a node: its layer comes from the section it is defined in.
 
-    def read_needs(body, where: str) -> set[str]:
-        """Read the `ingestion:` and `transformation:` keys of a report or transformation.
-
-        Adds every table found to the graph, going down into nested
-        transformations, and returns the nodes this report or
-        transformation needs directly.
+        Names not defined in a section are raw tables (ingestion).
         """
-        if body is None:
-            body = {}
-        if not isinstance(body, dict):
-            errors.append(f"{where} must have 'ingestion:' and/or 'transformation:' under it")
-            return set()
-        for key in body:
-            if key not in ("ingestion", "transformation"):
-                errors.append(f"{where} has an unknown key {key!r}")
+        if name in reports:
+            errors.append(f"{name} is a report; reports can't be used to build other tables")
+        return f"transformation.{name}" if name in transformations else f"ingestion.{name}"
 
-        needs: set[str] = set()
+    # 1. Transformations and reports need the tables in their list.
+    #    Raw tables need nothing: they are copied straight from the database.
+    graph: dict[str, set[str]] = {}
+    for layer, tables in (("transformation", transformations), ("reports", reports)):
+        for name, needs in tables.items():
+            if not needs:
+                errors.append(f"{layer}.{name} lists no tables")
+            graph[f"{layer}.{name}"] = {node(need) for need in needs or []}
+    for needs in list(graph.values()):
+        for need in needs:
+            graph.setdefault(need, set())
 
-        # `ingestion:` is a list of raw table names. Raw tables need nothing.
-        ingestion = body.get("ingestion") or []
-        if not isinstance(ingestion, list):
-            errors.append(f"{where}.ingestion must be a list of table names")
-            ingestion = []
-        for name in ingestion:
-            add(f"ingestion.{name}", set(), f"{where}.ingestion")
-            needs.add(f"ingestion.{name}")
+    # 2. A name can only be in one section.
+    for name in sorted(set(transformations) & set(reports)):
+        errors.append(f"{name} is both a transformation and a report")
 
-        # `transformation:` maps each transformation name to what it needs,
-        # written the same way, so we read it with this same function.
-        transformation = body.get("transformation") or {}
-        if not isinstance(transformation, dict):
-            errors.append(f"{where}.transformation must map each transformation to what it needs")
-            transformation = {}
-        for name, inner in transformation.items():
-            inner_where = f"{where}.transformation.{name}"
-            inner_needs = read_needs(inner, inner_where)
-            if not inner_needs:
-                errors.append(f"{inner_where} uses no tables")
-            add(f"transformation.{name}", inner_needs, inner_where)
-            needs.add(f"transformation.{name}")
-
-        return needs
-
-    # 1. Walk every report from the top down. Each report needs what is
-    #    listed directly under it; nested tables are added on the way.
-    reports = config.get("reports") if isinstance(config, dict) else None
-    if not isinstance(reports, dict) or not reports:
-        errors.append("config.yaml needs a 'reports:' key with at least one report")
-        reports = {}
-    for name, body in reports.items():
-        where = f"reports.{name}"
-        needs = read_needs(body, where)
-        if not needs:
-            errors.append(f"{where} uses no tables")
-        add(where, needs, where)
-
-    # 2. Every table needs its SQL script at <layer>/<name>.sql.
-    #    (No separate cycle check is needed: nesting can only express
-    #    "a needs b, b needs a" by describing a table in two different
-    #    ways, which add() already reports.)
-    for node in graph:
-        layer, name = node.split(".")
+    # 3. Every table needs its script at <layer>/<name>.sql.
+    for each in graph:
+        layer, name = each.split(".")
         if not (scripts_dir / layer / f"{name}.sql").is_file():
-            errors.append(f"{node} has no script {layer}/{name}.sql")
+            errors.append(f"{each} has no script {layer}/{name}.sql")
+
+    # 4. No cycle (a needs b, b needs a), or no order could work.
+    #    TopologicalSorter.prepare() raises CycleError with the nodes in the loop.
+    try:
+        TopologicalSorter(graph).prepare()
+    except CycleError as error:
+        errors.append("cycle: " + " -> ".join(error.args[1]))
 
     if errors:
         raise ValueError("config.yaml has problems:\n  - " + "\n  - ".join(errors))
