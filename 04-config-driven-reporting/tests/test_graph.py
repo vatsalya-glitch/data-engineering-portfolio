@@ -2,6 +2,7 @@ import pytest
 
 from report_framework.graph import (
     GraphCycleError,
+    build_order,
     report_usage_counts,
     topological_order,
     upstream,
@@ -71,3 +72,18 @@ def test_usage_counts_go_through_intermediates():
 def test_unused_node_counts_zero():
     counts = report_usage_counts({"a": [], "r": [], "unused": []}, ["r"])
     assert counts["unused"] == 0
+
+
+def test_priority_breaks_ties_between_ready_nodes():
+    graph = {"a": [], "b": [], "c": [], "x": ["a", "b", "c"]}
+    assert topological_order(graph, {"c": 3, "b": 2}) == ["c", "b", "a", "x"]
+
+
+def test_build_order_puts_the_most_shared_tables_first():
+    order = build_order(GRAPH, REPORTS)
+    # orders feeds 3 reports, customers and shipments 2 each.
+    assert order[:3] == ["orders", "customers", "shipments"]
+    # Dependencies still win over sharing.
+    for node, uses in GRAPH.items():
+        for used in uses:
+            assert order.index(used) < order.index(node)

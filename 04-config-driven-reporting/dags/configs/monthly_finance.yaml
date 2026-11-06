@@ -1,48 +1,54 @@
 # Monthly finance: one report for the month that has just ended.
 # The run starting at 04:00 on 1 Nov covers October.
-dag_id: monthly_finance
-description: Monthly revenue and payment reconciliation for finance.
-schedule: "0 4 1 * *"        # 04:00 on the 1st of every month
-period: month
-timezone: UTC
-start_date: 2026-10-01
-gcp_conn_id: google_cloud_default
-project: my-gcp-project
-location: US
-export_bucket: my-finance-exports
-alert_email: [data-team@example.com, finance-eng@example.com]
 
-sources:
+pipeline:
+  dag_id: monthly_finance
+  description: Monthly revenue and payment reconciliation for finance.
+  schedule: "0 4 1 * *"          # 04:00 on the 1st of every month
+  period: month
+  project: my-gcp-project
+  location: US
+  export_bucket: my-finance-exports
+  alert_email: [data-team@example.com, finance-eng@example.com]
+
+# ---------------------------------------------------------------- 1. ingestion
+ingestion:
   invoices:
     description: Invoices issued during the month, from the billing system's monthly file.
-    ingest:
+    load:
       uri: "gs://my-landing-bucket/invoices/{{ period_start }}/*.parquet"
-      mode: period             # replace only this month's partition
+      mode: period               # replace only this month's partition
       partition_field: invoice_month
     checks:
       - "SELECT COUNT(*) > 0 FROM raw.invoices WHERE invoice_month = DATE('{{ period_start }}')"
       - "SELECT COUNT(*) = 0 FROM raw.invoices WHERE amount < 0"
+
   payments:
     description: Payments, loaded continuously by the payments pipeline.
-    freshness: "SELECT MAX(paid_at) >= TIMESTAMP('{{ period_end }}') FROM raw.payments"
-    freshness_timeout_hours: 6
-    poke_interval_minutes: 15
+    wait_for:
+      fresh_when: "SELECT MAX(paid_at) >= TIMESTAMP('{{ period_end }}') FROM raw.payments"
+      timeout_hours: 6
+      poke_interval_minutes: 15
     checks:
       - "SELECT COUNT(*) = 0 FROM raw.payments WHERE invoice_id IS NULL"
 
-models:
+# ---------------------------------------------------------------- 2. transformation
+transformation:
   invoice_payments:
-    type: intermediate
     description: Each invoice of the month with what has been paid against it.
-    uses: [invoices, payments]
+    sql: transformation/invoice_payments.sql
+    ingestion: [invoices, payments]
     checks:
       - "SELECT COUNT(*) = COUNT(DISTINCT invoice_id) FROM mart.invoice_payments"
 
+# ---------------------------------------------------------------- 3. reports
+reports:
   finance_report:
-    type: report
-    uses: [invoice_payments]
+    sql: reports/finance_report.sql
+    transformation: [invoice_payments]
     checks:
       - "SELECT ABS(SUM(invoiced) - SUM(paid) - SUM(outstanding)) < 0.01 FROM reports.finance_report"
-    steps: [approval, export, email]
-    email_to: [finance@example.com]
-    approval_timeout_hours: 48
+    steps:
+      - approval: {timeout_hours: 48}
+      - export
+      - email: {to: [finance@example.com]}

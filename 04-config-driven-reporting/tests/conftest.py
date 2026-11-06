@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 import sys
 from pathlib import Path
 
@@ -25,21 +26,28 @@ def base_config() -> dict:
 
 
 def base_sql() -> dict[str, str]:
-    """model name -> SQL, from fixtures/sql/test_pipeline/."""
-    return {path.stem: path.read_text() for path in sorted(BASE_SQL_DIR.glob("*.sql"))}
+    """SQL path (relative to the pipeline's SQL folder) -> SQL, from fixtures/sql/test_pipeline/."""
+    return {path.relative_to(BASE_SQL_DIR).as_posix(): path.read_text()
+            for path in sorted(BASE_SQL_DIR.rglob("*.sql"))}
 
 
 def write_pipeline(root: Path, config: dict | str, sql: dict[str, str] | None = None) -> Path:
-    """Write configs/<dag_id>.yaml and sql/<dag_id>/<model>.sql under `root`."""
-    dag_id = config.get("dag_id", "test_pipeline") if isinstance(config, dict) else "test_pipeline"
+    """Write configs/<dag_id>.yaml and sql/<dag_id>/<path> under `root`.
+
+    The pipeline's SQL folder is replaced, so files from an earlier call don't linger.
+    """
+    dag_id = "test_pipeline"
+    if isinstance(config, dict):
+        dag_id = (config.get("pipeline") or {}).get("dag_id", dag_id)
     config_dir = root / "configs"
     sql_dir = root / "sql" / str(dag_id)
     config_dir.mkdir(parents=True, exist_ok=True)
-    sql_dir.mkdir(parents=True, exist_ok=True)
+    shutil.rmtree(sql_dir, ignore_errors=True)
     path = config_dir / f"{dag_id}.yaml"
     path.write_text(config if isinstance(config, str) else yaml.safe_dump(config, sort_keys=False))
-    for name, text in (base_sql() if sql is None else sql).items():
-        (sql_dir / f"{name}.sql").write_text(text)
+    for relative, text in (base_sql() if sql is None else sql).items():
+        (sql_dir / relative).parent.mkdir(parents=True, exist_ok=True)
+        (sql_dir / relative).write_text(text)
     return path
 
 

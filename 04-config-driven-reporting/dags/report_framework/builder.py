@@ -2,16 +2,20 @@
 
     dag = build_dag("configs/daily_operations.yaml")
 
-Every source, intermediate and report becomes a TaskGroup named after it:
+The DAG has one task group per layer, and inside it one group per table:
 
-    source loaded here:      <name>.ingest     -> <name>.check_1, <name>.check_2 ...
-    source loaded elsewhere: <name>.wait_fresh -> <name>.check_1 ...
-    model:                   <name>.build      -> <name>.check_1 ...
-    report steps:            ... checks        -> <name>.approval -> <name>.export -> <name>.email
+    ingestion.<table>.load         -> ingestion.<table>.check_1, check_2 ...
+    ingestion.<table>.wait_for     -> ingestion.<table>.check_1 ...
+    transformation.<table>.build   -> transformation.<table>.check_1 ...
+    reports.<report>.build         -> reports.<report>.check_1 ... -> approval -> export -> email
 
-A model's group runs after the groups of everything in its `uses`, so the
-order comes only from config (UC2). Checks of a table run in parallel, and
-everything downstream waits for all of them (UC7).
+A table's group runs after the groups of every table it lists under
+`ingestion:` / `transformation:`. Each table is built once, however many
+reports use it, and a report waits only for the tables it uses.
+
+When several tasks are ready at the same time, the one used by the most
+reports runs first (`priority_weight` = number of reports that depend on
+it, directly or through transformations).
 """
 
 from __future__ import annotations
@@ -33,9 +37,14 @@ from airflow.timetables.interval import CronDataIntervalTimetable
 from . import graph as graph_lib
 from . import steps as steps_lib
 from .config import (
-    Model,
+    INGESTION,
+    LAYERS,
+    REPORTS,
+    TRANSFORMATION,
+    Ingestion,
     PipelineConfig,
-    Source,
+    Report,
+    Transformation,
     load_config,
     partition_suffix,
     period_bounds,
@@ -143,14 +152,14 @@ class DagBuilder:
     def __init__(self, config: PipelineConfig):
         self.config = config
         self.graph = config.graph
-        self.order = graph_lib.topological_order(self.graph)
         self.usage = graph_lib.report_usage_counts(self.graph, config.reports)
+        self.order = graph_lib.build_order(self.graph, config.reports)
         self.groups: dict[str, TaskGroup] = {}
 
     # ---- helpers
 
     def weight(self, name: str) -> dict[str, Any]:
-        """Tasks used by more reports run first when several are ready (UC1)."""
+        """Tasks used by more reports run first when several are ready."""
         return {"priority_weight": max(self.usage.get(name, 0), 1), "weight_rule": "absolute"}
 
     def bigquery_args(self) -> dict[str, Any]:
@@ -175,92 +184,94 @@ class DagBuilder:
             after >> task
         return tasks or [after]
 
-    # ---- sources
+    # ---- ingestion layer
 
-    def ingest_task(self, source: Source):
-        ingest = source.ingest
-        assert ingest is not None
-        table_id = source.name
+    def load_task(self, table: Ingestion):
+        load_cfg = table.load
+        assert load_cfg is not None
+        table_id = table.name
         load: dict[str, Any] = {
-            "sourceUris": [template(ingest.uri)],
-            "sourceFormat": ingest.format,
+            "sourceUris": [template(load_cfg.uri)],
+            "sourceFormat": load_cfg.format,
             "writeDisposition": "WRITE_TRUNCATE",  # rerun = same result, no duplicate rows
             "createDisposition": "CREATE_IF_NEEDED",
         }
-        if ingest.mode == "period":
+        if load_cfg.mode == "period":
             # Partition decorator + WRITE_TRUNCATE replaces only this period's partition.
-            table_id = template(f"{source.name}${{{{ period_partition }}}}")
+            table_id = template(f"{table.name}${{{{ period_partition }}}}")
             partitioning = {"type": "DAY" if self.config.period == "day" else "MONTH"}
-            if ingest.partition_field:
-                partitioning["field"] = ingest.partition_field
+            if load_cfg.partition_field:
+                partitioning["field"] = load_cfg.partition_field
             load["timePartitioning"] = partitioning
-        if ingest.format == "CSV":
+        if load_cfg.format == "CSV":
             load["skipLeadingRows"] = 1
-        if ingest.format in ("CSV", "NEWLINE_DELIMITED_JSON"):
+        if load_cfg.format in ("CSV", "NEWLINE_DELIMITED_JSON"):
             load["autodetect"] = True
         load["destinationTable"] = {
             "projectId": self.config.project,
-            "datasetId": source.dataset,
+            "datasetId": table.dataset,
             "tableId": table_id,
         }
         return BigQueryInsertJobOperator(
-            task_id="ingest",
+            task_id="load",
             configuration={"load": load},
             project_id=self.config.project,
             **self.bigquery_args(),
-            **self.weight(source.name),
+            **self.weight(table.name),
         )
 
-    def freshness_task(self, source: Source):
+    def wait_for_task(self, table: Ingestion):
+        wait = table.wait_for
+        assert wait is not None
         return BigQueryFreshnessSensor(
-            task_id="wait_fresh",
-            sql=template(source.freshness or ""),
+            task_id="wait_for",
+            sql=template(wait.fresh_when),
             gcp_conn_id=self.config.gcp_conn_id,
             location=self.config.location,
             hook_params={"use_legacy_sql": False},
             mode="reschedule",  # don't hold a worker slot between pokes
-            poke_interval=timedelta(minutes=source.poke_interval_minutes).total_seconds(),
-            timeout=timedelta(hours=source.freshness_timeout_hours).total_seconds(),
+            poke_interval=timedelta(minutes=wait.poke_interval_minutes).total_seconds(),
+            timeout=timedelta(hours=wait.timeout_hours).total_seconds(),
             retries=0,  # the timeout is final: retrying would restart the clock
-            **self.weight(source.name),
+            **self.weight(table.name),
         )
 
-    def add_source(self, source: Source) -> None:
-        kind = "ingest" if source.ingest else "wait until fresh"
-        with TaskGroup(group_id=source.name, tooltip=f"source {source.table} ({kind})") as group:
-            first = self.ingest_task(source) if source.ingest else self.freshness_task(source)
-            self.add_checks(source.name, source.checks, after=first)
-        self.groups[source.name] = group
+    def add_ingestion(self, table: Ingestion) -> None:
+        kind = "loaded by this DAG" if table.load else "loaded elsewhere: wait until fresh"
+        with TaskGroup(group_id=table.name, tooltip=f"{table.table} ({kind})") as group:
+            first = self.load_task(table) if table.load else self.wait_for_task(table)
+            self.add_checks(table.name, table.checks, after=first)
+        self.groups[table.name] = group
 
-    # ---- models
+    # ---- transformation and report layers
 
-    def add_model(self, model: Model) -> None:
-        with TaskGroup(group_id=model.name, tooltip=f"{model.type} {model.table}") as group:
+    def add_sql_table(self, table: Transformation | Report) -> None:
+        with TaskGroup(group_id=table.name, tooltip=f"{table.table} ({table.sql_path})") as group:
             build = BigQueryInsertJobOperator(
                 task_id="build",
-                configuration={"query": {"query": template(model.sql), "useLegacySql": False}},
+                configuration={"query": {"query": template(table.sql), "useLegacySql": False}},
                 project_id=self.config.project,
                 **self.bigquery_args(),
-                **self.weight(model.name),
+                **self.weight(table.name),
             )
-            last = self.add_checks(model.name, model.checks, after=build)
-            for step_name in model.steps:
-                step_type = steps_lib.STEPS[step_name]
+            last = self.add_checks(table.name, table.checks, after=build)
+            for step in getattr(table, "steps", []):
                 ctx = steps_lib.StepContext(
                     pipeline=self.config,
-                    report=model,
+                    report=table,
+                    settings=step.settings,
                     template=template,
-                    priority_weight=self.weight(model.name)["priority_weight"],
+                    priority_weight=self.weight(table.name)["priority_weight"],
                 )
-                tasks = step_type.build(ctx)
+                tasks = steps_lib.STEPS[step.type].build(ctx)
                 for previous in last:
                     previous >> tasks[0]
                 for upstream_task, downstream_task in zip(tasks, tasks[1:]):
                     upstream_task >> downstream_task
                 last = [tasks[-1]]
-        for used in model.uses:
+        for used in table.uses:
             self.groups[used] >> group
-        self.groups[model.name] = group
+        self.groups[table.name] = group
 
     # ---- DAG
 
@@ -285,16 +296,29 @@ class DagBuilder:
             },
             tags=["report-framework", f"period:{config.period}"],
         )
+        tooltips = {
+            INGESTION: "Raw tables: loaded by this DAG, or waited for",
+            TRANSFORMATION: "Shared tables built with SQL",
+            REPORTS: "Reports and their steps",
+        }
         with dag:
-            for name in self.order:
-                if name in config.sources:
-                    self.add_source(config.sources[name])
-                else:
-                    self.add_model(config.models[name])
+            for layer in LAYERS:
+                tables = getattr(config, layer)
+                if not tables:
+                    continue
+                with TaskGroup(group_id=layer, tooltip=tooltips[layer], prefix_group_id=True):
+                    for name in self.order:
+                        if name not in tables:
+                            continue
+                        if layer == INGESTION:
+                            self.add_ingestion(tables[name])
+                        else:
+                            self.add_sql_table(tables[name])
         return dag
 
     def doc_md(self) -> str:
         config = self.config
+        tables = config.tables()
         lines = [
             f"# {config.dag_id}",
             "",
@@ -303,11 +327,27 @@ class DagBuilder:
             f"Built by the report framework from `{config.path.name}`. "
             f"Each run covers the {config.period} that has just ended.",
             "",
-            "| Report | Uses (directly or indirectly) | Steps |",
-            "|---|---|---|",
+            "## Reports",
+            "",
+            "| Report | Ingestion tables | Transformation tables | Steps |",
+            "|---|---|---|---|",
         ]
-        for report in config.reports:
-            uses = ", ".join(sorted(graph_lib.upstream(self.graph, report)))
-            steps = " → ".join(config.models[report].steps) or "-"
-            lines.append(f"| `{config.models[report].table}` | {uses} | {steps} |")
+        for name, report in config.reports.items():
+            upstream = graph_lib.upstream(self.graph, name)
+            ingestion = ", ".join(sorted(u for u in upstream if u in config.ingestion)) or "-"
+            transformation = ", ".join(sorted(u for u in upstream if u in config.transformation)) or "-"
+            steps = " → ".join(step.type for step in report.steps) or "-"
+            lines.append(f"| `{report.table}` | {ingestion} | {transformation} | {steps} |")
+        lines += [
+            "",
+            "## Build order",
+            "",
+            "Most-shared tables first, wherever the dependencies allow.",
+            "",
+            "| # | Table | Layer | Used by reports |",
+            "|---|---|---|---|",
+        ]
+        for number, name in enumerate(self.order, start=1):
+            lines.append(f"| {number} | `{tables[name].table}` | {tables[name].layer} | "
+                         f"{self.usage.get(name, 0)} |")
         return "\n".join(lines)

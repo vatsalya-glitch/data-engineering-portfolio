@@ -30,7 +30,7 @@ Practical learning projects for data engineering, pipelines, and privacy.
 
 ### 04 - Config-Driven Reporting Pipelines
 
-**What:** One shared framework that turns a YAML config into an Airflow DAG for reports  
+**What:** Describe reports in YAML (the ingestion and transformation tables they use, their SQL, their steps) and get one Airflow DAG that builds shared tables once, most-shared first  
 **Tech:** Python, Apache Airflow 3.1, BigQuery, GCS, sqlglot, pytest  
 **Topics:** Config-driven DAGs, dependency graphs and topological sort, config/SQL drift checks, idempotent partition loads, freshness sensors, quality checks, human approval, completed-period scheduling
 
@@ -86,7 +86,7 @@ pytest tests
 04-config-driven-reporting/
 ├── dags/report_framework/   # config, graph, sql_parse, steps, builder
 ├── dags/configs/            # One YAML per pipeline (daily_operations, monthly_finance)
-├── dags/sql/<dag_id>/       # One SQL file per model
+├── dags/sql/<dag_id>/       # transformation/ and reports/ SQL files
 ├── dags/*_dag.py            # One-line DAG files
 └── tests/                   # Validation rules, graph, drift check, DagBag load, isolation
 ```

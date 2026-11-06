@@ -1,16 +1,16 @@
 # Framework defaults, shared by every pipeline.
 #
 # Change a value here and it reaches every pipeline that doesn't set it.
-# A pipeline config can override any key under `pipeline`, `source` and
-# `report` by setting the same key at the same level of its own YAML.
+# A pipeline config overrides a value by setting the same key in the same
+# place: under `pipeline:`, under a table's `wait_for:`, or under a step.
 
-# Where each kind of table lives. SQL files and checks refer to these datasets.
+# The dataset each layer writes to. SQL files and checks refer to these.
 datasets:
-  source: raw              # raw.<source>
-  intermediate: mart       # mart.<intermediate>
-  report: reports          # reports.<report>
+  ingestion: raw           # raw.<ingestion table>
+  transformation: mart     # mart.<transformation table>
+  reports: reports         # reports.<report>
 
-# Top-level keys of a pipeline config.
+# Keys under `pipeline:` in a pipeline config.
 pipeline:
   timezone: UTC
   start_date: 2026-01-01
@@ -20,11 +20,12 @@ pipeline:
   retry_delay_minutes: 5
   max_active_runs: 1
 
-# Keys of each entry under `sources:`.
-source:
-  freshness_timeout_hours: 4     # a freshness wait fails after this long
-  poke_interval_minutes: 10      # how often a freshness wait checks again
+# Keys under an ingestion table's `wait_for:` (a table loaded outside this DAG).
+wait_for:
+  timeout_hours: 4             # the wait fails after this long
+  poke_interval_minutes: 10    # how often it checks again
 
-# Keys of each entry under `models:` with type: report.
-report:
-  approval_timeout_hours: 8      # no answer by then = rejected: remaining steps are skipped
+# Settings per step type, under a report's `steps:`.
+steps:
+  approval:
+    timeout_hours: 8           # no answer by then = rejected: the remaining steps are skipped

@@ -33,8 +33,13 @@ def _canonical_cycle(cycle: list[str]) -> list[str]:
     return nodes + [nodes[0]]
 
 
-def topological_order(graph: Graph) -> list[str]:
-    """Every node after the nodes it uses. Ties are broken by name, so the order is stable."""
+def topological_order(graph: Graph, priority: Mapping[str, int] | None = None) -> list[str]:
+    """Every node after the nodes it uses.
+
+    Among nodes that are ready at the same time, higher `priority` comes
+    first, then the name, so the order is stable.
+    """
+    priority = priority or {}
     sorter = TopologicalSorter({node: sorted(uses) for node, uses in graph.items()})
     try:
         sorter.prepare()
@@ -42,10 +47,15 @@ def topological_order(graph: Graph) -> list[str]:
         raise GraphCycleError(_canonical_cycle(error.args[1])) from None
     order: list[str] = []
     while sorter.is_active():
-        ready = sorted(sorter.get_ready())
+        ready = sorted(sorter.get_ready(), key=lambda node: (-priority.get(node, 0), node))
         order.extend(ready)
         sorter.done(*ready)
     return order
+
+
+def build_order(graph: Graph, reports: Iterable[str]) -> list[str]:
+    """Topological order in which, at every point, the tables most reports share come first."""
+    return topological_order(graph, report_usage_counts(graph, reports))
 
 
 def upstream(graph: Graph, node: str) -> set[str]:
