@@ -1,12 +1,21 @@
+"""Tests for graph.py. They don't need Airflow: run them with `pytest tests`.
+
+The first tests use the real config.yaml. The rest build a tiny config in a
+temporary folder and break one rule at a time.
+"""
+
 import sys
 from pathlib import Path
 
 import pytest
 
+# Make graph.py (one folder up) importable.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from graph import build_graph, build_order, load_config, reports_using  # noqa: E402
 
+
+# --------------------------------------------------------------------------- the real config
 
 def test_config_builds_a_valid_graph():
     graph = build_graph(load_config())
@@ -39,11 +48,15 @@ def test_most_shared_tables_go_first():
     assert order.index("transformation.order_revenue") < order.index("transformation.net_revenue")
 
 
+# --------------------------------------------------------------------------- mistakes in the config
+
 def config(**layers):
+    """A tiny config with one ingestion table; tests add the layers they need."""
     return {"ingestion": ["orders"], "transformation": {}, "reports": {}} | layers
 
 
 def write_scripts(tmp_path, *nodes):
+    """Create an empty <layer>/<name>.sql script for each node."""
     for node in nodes:
         layer, name = node.split(".")
         (tmp_path / layer).mkdir(exist_ok=True)

@@ -91,11 +91,78 @@ Each name has a script at `<layer>/<name>.sql`. A transformation or report lists
 
 When Airflow loads `main.py`:
 
+```
+config.yaml ──► load_config() ──► build_graph() ──► reports_using() ──► build_order() ──► Airflow tasks + arrows
+                 graph.py           graph.py          graph.py            graph.py           main.py
+```
+
 1. `load_config()` reads `config.yaml`.
 2. `build_graph()` turns it into `node -> nodes it needs`, with nodes named `<layer>.<name>`. It refuses to load the DAG, listing every mistake, if a table is unknown, a script is missing, a table uses nothing, or there is a cycle.
 3. `reports_using()` counts, for each node, how many reports need it.
 4. `build_order()` sorts the graph topologically. Among nodes ready at the same time, the most-used comes first.
 5. `main.py` creates one `BigQueryInsertJobOperator` per node, with that count as its `priority_weight`, and adds an arrow for every dependency.
+
+When the DAG runs, at 06:00 every day:
+
+1. The five ingestion tasks start; nothing comes before them. `orders` and `order_items` start first, because all four reports need them.
+2. `order_revenue` starts as soon as `orders` and `order_items` are done; `net_revenue` once `order_revenue` and `refunds` are.
+3. Each report starts as soon as the tables it needs are done. It doesn't wait for the other reports.
+4. If a task fails, only the tasks that need it stop. For example, a failed `shipping` copy stops `shipping_cost_report` only.
+
+## How the Code Works
+
+### `graph.py`
+
+**`build_graph(config)`** builds a dictionary from each node to the nodes it needs:
+
+```python
+graph["ingestion.orders"]             = set()                          # needs nothing
+graph["transformation.order_revenue"] = {"ingestion.orders", "ingestion.order_items"}
+graph["transformation.net_revenue"]   = {"ingestion.refunds", "transformation.order_revenue"}
+graph["reports.revenue_report"]       = {"transformation.net_revenue"}
+```
+
+It works in four steps:
+
+1. Every ingestion table becomes a node that needs nothing.
+2. Every transformation and report becomes a node that needs the tables under its `ingestion:` and `transformation:` keys.
+3. Every node is checked: each table it needs must exist, and it must have a script at `<layer>/<name>.sql`.
+4. Python's `graphlib.TopologicalSorter` checks there is no cycle (`a` needs `b`, `b` needs `a`).
+
+All mistakes are collected and raised together, so they can be fixed in one go.
+
+**`reports_using(graph)`** starts from each report and walks back through everything it needs (a depth-first search). Every node it reaches gets +1. That is how `orders` counts for `revenue_report`, even though the report only lists `net_revenue`:
+
+```
+revenue_report ─► net_revenue ─► order_revenue ─► orders
+```
+
+**`build_order(graph)`** uses `TopologicalSorter` step by step:
+
+```python
+while sorter.is_active():
+    ready = sorted(sorter.get_ready(), key=lambda node: (-counts[node], node))  # most-used first
+    order.extend(ready)
+    sorter.done(*ready)   # this makes the nodes that need them ready next
+```
+
+`get_ready()` returns the nodes whose needs are all done. Sorting them by usage count puts the shared work first.
+
+### `main.py`
+
+`main.py` is the only file that uses Airflow. It:
+
+1. Calls the three functions above.
+2. Creates one `BigQueryInsertJobOperator` per node, in build order. The task id is the node name, the query is the node's SQL script, and the `priority_weight` is its usage count.
+3. Adds an arrow `tasks[need] >> tasks[node]` for every dependency in the graph.
+
+### The SQL scripts
+
+Each script creates its own table with `CREATE OR REPLACE TABLE`, so rerunning a day gives the same result.
+
+- **`ingestion/`** copies a table from the shop database into `raw.<name>` with `EXTERNAL_QUERY`.
+- **`transformation/`** builds a shared table in `mart.<name>` from `raw` and `mart` tables.
+- **`reports/`** builds `reports.<name>` for the completed day, filtering on `{{ data_interval_start | ds }}`.
 
 See the order without Airflow:
 
