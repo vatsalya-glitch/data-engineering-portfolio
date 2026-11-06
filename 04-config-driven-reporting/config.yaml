@@ -1,41 +1,58 @@
-# The finance reports and the steps each one needs, in three layers:
+# The finance reports and the steps each one needs, read top to bottom:
 #
-#   ingestion       copy raw tables from the shop database   ingestion/<name>.sql
-#   transformation  shared tables built from raw tables       transformation/<name>.sql
-#   reports         the final reports                         reports/<name>.sql
+#   report                                    reports/<name>.sql
+#     ingestion:       raw tables the report reads directly      ingestion/<name>.sql
+#     transformation:  shared tables the report reads            transformation/<name>.sql
+#       <transformation>:
+#         ingestion:       raw tables it is built from
+#         transformation:  other transformations it is built from (nested the same way)
 #
-# Each transformation and report lists the tables it reads. graph.py turns
-# these lists into the order the tasks run in.
+# A table that several reports need is written in each of them, but runs
+# only once. graph.py checks it is described the same way everywhere.
 #
 # Only reports and their steps belong here. The DAG settings (name,
 # schedule, connections) are in main.py.
 
-# Raw tables copied from the database. One script each: ingestion/<name>.sql
-ingestion:
-  - orders
-  - order_items
-  - invoices
-  - refunds
-  - shipping
-
-# Shared tables. One script each: transformation/<name>.sql
-transformation:
-  order_revenue:
-    ingestion: [orders, order_items]
-  net_revenue:
-    ingestion: [refunds]
-    transformation: [order_revenue]
-
-# Final reports. One script each: reports/<name>.sql
 reports:
+
   revenue_report:
-    transformation: [net_revenue]
+    transformation:
+      net_revenue:
+        ingestion:
+          - refunds
+        transformation:
+          order_revenue:
+            ingestion:
+              - orders
+              - order_items
+
   refunds_report:
-    ingestion: [refunds]
-    transformation: [order_revenue]
+    ingestion:
+      - refunds
+    transformation:
+      order_revenue:
+        ingestion:
+          - orders
+          - order_items
+
   shipping_cost_report:
-    ingestion: [shipping]
-    transformation: [order_revenue]
+    ingestion:
+      - shipping
+    transformation:
+      order_revenue:
+        ingestion:
+          - orders
+          - order_items
+
   invoice_reconciliation_report:
-    ingestion: [invoices]
-    transformation: [net_revenue]
+    ingestion:
+      - invoices
+    transformation:
+      net_revenue:
+        ingestion:
+          - refunds
+        transformation:
+          order_revenue:
+            ingestion:
+              - orders
+              - order_items
