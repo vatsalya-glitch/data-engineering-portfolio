@@ -28,11 +28,11 @@ Practical learning projects for data engineering, pipelines, and privacy.
 
 [Go to project →](./03-ecommerce-realtime-pipeline) | [Deep guide](./03-ecommerce-realtime-pipeline/STREAMING_CONCEPTS.md)
 
-### 04 - Config-Driven Reporting Pipelines
+### 04 - Config-Driven Finance Reports
 
-**What:** Describe reports in YAML (the ingestion and transformation tables they use, their SQL, their steps) and get one Airflow DAG that builds shared tables once, most-shared first  
-**Tech:** Python, Apache Airflow 3.1, BigQuery, GCS, sqlglot, pytest  
-**Topics:** Config-driven DAGs, dependency graphs and topological sort, config/SQL drift checks, idempotent partition loads, freshness sensors, quality checks, human approval, completed-period scheduling
+**What:** One Airflow DAG for four finance reports, built from a YAML config listing the ingestion and transformation tables each report uses  
+**Tech:** Python, Apache Airflow 3.1, BigQuery, YAML, pytest  
+**Topics:** Ingestion → transformation → report layers, dependency graphs, topological sort, shared-tables-first priority
 
 [Go to project →](./04-config-driven-reporting)
 
@@ -53,7 +53,7 @@ pip install -r requirements.txt
 python run_pipeline.py
 
 cd ../04-config-driven-reporting
-pip install -r requirements.txt   # see its README for Airflow's constraints file
+python graph.py                   # print the task order
 pytest tests
 ```
 
@@ -84,11 +84,12 @@ pytest tests
 └── STREAMING_CONCEPTS.md    # Detailed guide
 
 04-config-driven-reporting/
-├── dags/report_framework/   # config, graph, sql_parse, steps, builder
-├── dags/configs/            # One YAML per pipeline (daily_operations, monthly_finance)
-├── dags/sql/<dag_id>/       # transformation/ and reports/ SQL files
-├── dags/*_dag.py            # One-line DAG files
-└── tests/                   # Validation rules, graph, drift check, DagBag load, isolation
+├── config.yaml              # What each transformation and report reads
+├── ingestion/               # One SQL script per raw table
+├── transformation/          # One SQL script per shared table
+├── reports/                 # One SQL script per report
+├── graph.py                 # Config -> graph -> topological order
+└── main.py                  # The Airflow DAG
 ```
 
 ## License

@@ -1,0 +1,48 @@
+# Finance reports: one DAG, three layers.
+#
+#   ingestion       copy raw tables from the shop database   ingestion/<name>.sql
+#   transformation  shared tables built from raw tables       transformation/<name>.sql
+#   reports         the final reports                         reports/<name>.sql
+#
+# Each transformation and report lists the tables it reads. graph.py turns
+# these lists into the order the tasks run in.
+
+dag_id: finance_reports
+schedule: "0 6 * * *"            # every day at 06:00, for the day that just ended
+start_date: 2026-11-01
+gcp_conn_id: google_cloud_default
+location: US
+
+# Values the SQL scripts can use as {{ params.<name> }}.
+params:
+  source_connection: my-gcp-project.us.shop_db   # BigQuery connection to the shop database
+
+# Raw tables copied from the database. One script each: ingestion/<name>.sql
+ingestion:
+  - orders
+  - order_items
+  - invoices
+  - refunds
+  - shipping
+
+# Shared tables. One script each: transformation/<name>.sql
+transformation:
+  order_revenue:
+    ingestion: [orders, order_items]
+  net_revenue:
+    ingestion: [refunds]
+    transformation: [order_revenue]
+
+# Final reports. One script each: reports/<name>.sql
+reports:
+  revenue_report:
+    transformation: [net_revenue]
+  refunds_report:
+    ingestion: [refunds]
+    transformation: [order_revenue]
+  shipping_cost_report:
+    ingestion: [shipping]
+    transformation: [order_revenue]
+  invoice_reconciliation_report:
+    ingestion: [invoices]
+    transformation: [net_revenue]

@@ -3,9 +3,5 @@
 #     -c https://raw.githubusercontent.com/apache/airflow/constraints-3.1.8/constraints-3.13.txt
 apache-airflow>=3.1,<4
 apache-airflow-providers-google
-apache-airflow-providers-smtp
-apache-airflow-providers-common-sql
-apache-airflow-providers-standard
 PyYAML>=6.0
-sqlglot>=25
 pytest>=8.0
