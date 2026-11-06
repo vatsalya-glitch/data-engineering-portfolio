@@ -40,26 +40,18 @@ Each report lists the tables it reads. That turns the config into a graph, and a
 ## The Files
 
 ```
-config.yaml        what each transformation and report reads
+config.yaml        the reports and their steps: what each transformation and report reads
 ingestion/         one script per raw table: copy it from the shop database into raw.<name>
 transformation/    one script per shared table: build mart.<name>
 reports/           one script per report: build reports.<name>
 graph.py           read the config, build the graph, check it, order it, count usage
-main.py            the Airflow DAG: one BigQuery task per script, arrows from graph.py
+main.py            the Airflow DAG: its settings, one BigQuery task per script, arrows from graph.py
 tests/             graph tests (no Airflow needed)
 ```
 
 ## The Config
 
 ```yaml
-dag_id: finance_reports
-schedule: "0 6 * * *"            # every day at 06:00, for the day that just ended
-start_date: 2026-11-01
-gcp_conn_id: google_cloud_default
-location: US
-params:
-  source_connection: my-gcp-project.us.shop_db
-
 ingestion: [orders, order_items, invoices, refunds, shipping]
 
 transformation:
@@ -84,6 +76,17 @@ reports:
 ```
 
 Each name has a script at `<layer>/<name>.sql`. A transformation or report lists only the tables its own script reads. Tables needed through a transformation come with it: `revenue_report` waits for `orders` because `net_revenue` needs `order_revenue`, which needs `orders`.
+
+`config.yaml` holds only the reports and their steps. The DAG's own settings are constants at the top of `main.py`:
+
+```python
+DAG_ID = "finance_reports"
+SCHEDULE = "0 6 * * *"                       # every day at 06:00, for the day that just ended
+START_DATE = pendulum.datetime(2026, 11, 1, tz="UTC")
+GCP_CONN_ID = "google_cloud_default"         # Airflow connection to Google Cloud
+LOCATION = "US"                              # BigQuery location of the datasets
+PARAMS = {"source_connection": "my-gcp-project.us.shop_db"}   # used in SQL as {{ params.<name> }}
+```
 
 **Adding a report** means writing `reports/<name>.sql` and adding a few lines under `reports:`. Nothing else changes.
 
@@ -152,7 +155,7 @@ while sorter.is_active():
 
 `main.py` is the only file that uses Airflow. It:
 
-1. Calls the three functions above.
+1. Sets the DAG's constants (name, schedule, start date, connection, location, params) and calls the three functions above.
 2. Creates one `BigQueryInsertJobOperator` per node, in build order. The task id is the node name, the query is the node's SQL script, and the `priority_weight` is its usage count.
 3. Adds an arrow `tasks[need] >> tasks[node]` for every dependency in the graph.
 

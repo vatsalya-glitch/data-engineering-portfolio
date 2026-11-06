@@ -1,4 +1,4 @@
-# Finance reports: one DAG, three layers.
+# The finance reports and the steps each one needs, in three layers:
 #
 #   ingestion       copy raw tables from the shop database   ingestion/<name>.sql
 #   transformation  shared tables built from raw tables       transformation/<name>.sql
@@ -6,16 +6,9 @@
 #
 # Each transformation and report lists the tables it reads. graph.py turns
 # these lists into the order the tasks run in.
-
-dag_id: finance_reports
-schedule: "0 6 * * *"            # every day at 06:00, for the day that just ended
-start_date: 2026-11-01
-gcp_conn_id: google_cloud_default
-location: US
-
-# Values the SQL scripts can use as {{ params.<name> }}.
-params:
-  source_connection: my-gcp-project.us.shop_db   # BigQuery connection to the shop database
+#
+# Only reports and their steps belong here. The DAG settings (name,
+# schedule, connections) are in main.py.
 
 # Raw tables copied from the database. One script each: ingestion/<name>.sql
 ingestion:
